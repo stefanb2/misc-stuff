@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "Sending Ethernet WOL packet to mediabox..."
+/usr/bin/sudo /usr/sbin/ether-wake -b -i enp0s25 E0:D5:5E:83:E1:D3
