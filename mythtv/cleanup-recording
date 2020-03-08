@@ -1,0 +1,64 @@
+#!/bin/bash
+###############################################################################
+#
+# User Job Script to remove problematic audio tracks from transport stream
+#
+###############################################################################
+
+exec >>/home/frontend/cleanup_recordings.log 2>&1
+
+dir=$1
+file=$2
+orig="${dir}/${file}"
+if [[ -z   "${dir}"  ]]  ||
+   [[ ! -d "${dir}"  ]] ||
+   [[ -z   "${file}" ]] ||
+   [[ ! -f "${orig}" ]]; then
+        echo 1>&2 "ERROR: wrong parameters '${dir}' '${file}'"
+        exit 1
+fi
+tmp="${dir}/TMP_${file}"
+backup="${dir}/${file}.ORIG"
+
+set -e
+echo "$(date): attempting to clean ${orig}"
+
+if [[ ! -r "${backup}" ]]; then
+        # Drop the following streams:
+        # Stream #0:5[0x35f](dut): Audio: ac3 (,,,), 0 channels (visual...
+        # Stream #0:5[0x369](dut): Audio: ac3 (...), 0 channels (visual...
+        _channels=( $(ffmpeg -i "${orig}" 2>&1 | perl -e '
+            use 5.014;
+            use warnings;
+            my %streams;
+            while (<STDIN>) {
+                if (/Audio: .*0 channels/) {
+                    my($stream, $index);
+                    if (($stream) = /for stream (\d+)/) {
+                        $streams{$stream}++;
+                    } elsif ((($stream, $index) = / \#0:(\d+)\[([^\]]+)\]\(\w+\):/) &&
+                             (exists $streams{$stream})) {
+                        print "-map -0:i:${index}\n";
+                    }
+                }
+            }
+        ') )
+
+        if [[ -z "${_channels[@]}" ]]; then
+            echo "$(date): no problematic audio channels detected in ${orig}"
+        else
+            echo "$(date): using '${_channels[@]}' to clean ${orig}"
+        fi
+
+        rm -f "${tmp}"
+        nice -19 ionice -c 3 ffmpeg -threads 0 \
+                -hide_banner -loglevel info -nostats \
+                -i "${orig}" \
+                -map 0 ${_channels[@]} \
+                -c copy "${tmp}"
+        mv "${orig}" "${backup}"
+        mv "${tmp}" "${orig}"
+        # NOTE: --noprogress doesn't work
+        mythcommflag >/dev/null --quiet --rebuild --noprogress --file ${orig}
+        ls -lht "${orig}" "${backup}"
+fi
