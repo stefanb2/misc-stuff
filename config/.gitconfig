@@ -1,0 +1,51 @@
+[user]
+	name = "Stefan Becker"
+	email = chemobejk@gmail.com
+[branch]
+	autosetupmerge = always
+[color]
+	branch = auto
+	diff = auto
+	interactive = auto
+	status = auto
+	ui = auto
+[color "branch"]
+	upstream = magenta bold
+[diff]
+	guitool = xxdiff
+	tool = xxdiff
+[difftool]
+	prompt = no
+	trustExitCode = no
+[push]
+	default = matching
+[sendemail]
+	confirm = always
+	from = Stefan Becker <chemobejk@gmail.com>
+	smtpEncryption = tls
+	smtpServer = smtp.gmail.com
+	smtpServerPort = 587
+	smtpUser = chemobejk@gmail.com
+[alias]
+	as    = !git add -u && git status
+	asd   = !git add -u && git status && git diff HEAD
+	asdw  = !git add -u && git status && git diff HEAD --word-diff
+	asp   = !git add -u && git status && git diff --stat --summary HEAD^
+	aspd  = !git add -u && git status && git diff HEAD^
+	aspdw = !git add -u && git status && git diff HEAD^ --word-diff
+	bnm   = branch -r --no-merged
+	bv    = branch -vv
+	dh    = diff HEAD
+	dhw   = diff HEAD --word-diff
+	dp    = diff HEAD^
+	dpw   = diff HEAD^ --word-diff
+	ds    = diff --staged
+	dsp   = diff --staged HEAD^
+	dspw  = diff --staged --word-diff HEAD^
+	dsw   = diff --staged --word-diff
+	lg    = log --graph --abbrev-commit --date=short -n10 --pretty=format:'%C(bold red)%h%C(magenta)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset'
+	lp    = log --pretty=fuller
+	lo    = log --oneline -n10
+	rs    = remote show
+	rso   = remote show origin
+	rsu   = remote show upstream
