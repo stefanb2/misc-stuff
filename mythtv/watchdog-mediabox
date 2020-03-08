@@ -1,0 +1,96 @@
+#!/usr/bin/perl -w
+use 5.008;
+use strict;
+use warnings;
+
+use IO::Handle;
+use IO::Socket::INET;
+use IO::Select;
+
+# CONFIGURATION START
+use constant ETHERWAKE      => qw(/usr/sbin/etherwake -b -i green0 E0:D5:5E:83:E1:D3);
+use constant LOGFILE        => "/var/log/watchdog-mediabox.log";
+use constant LISTEN_PORT    => 9001;
+use constant MAX_TIMEOUT    => 1 * 60 * 60;
+use constant WATCHDOG_GUARD => 60;
+# CONFIGURATION END
+
+# Logging
+open(STDOUT, ">>", LOGFILE) or die "STDOUT: $!\n";
+open(STDERR, ">&STDOUT") or die "STDERR: $!\n";
+STDOUT->autoflush(1);
+STDERR->autoflush(1);
+
+# Create listen socket
+my $socket = IO::Socket::INET->new(
+				   LocalPort => LISTEN_PORT,
+				   Proto     => "tcp",
+				   Listen    => 1,
+				   ReuseAddr => 1
+				  )
+  or die "Can't bind: $@\n";
+
+# Create select object
+my $select = IO::Select->new($socket)
+  or die "Can't create select object: $!\n";
+
+# Script can be stopped using SIGINT or SIGTERM
+my $running = 1;
+$SIG{INT} = $SIG{TERM} = sub { $running = 0 };
+
+# Next timeout (in seconds)
+my $timeout = 10; # 1*60*60 # make sure we wakeup mediabox at least once...
+
+# Loop until asked to quit
+print "Starting at ", scalar(localtime(time())), "\n";
+while ($running) {
+  print "Watchdog set to $timeout seconds from now.\n";
+
+  # Wait for signal, socket event or timeout
+  my @ready = $select->can_read($timeout);
+
+  # Signal?
+  unless ($running) {
+    print "Exiting...\n";
+
+  # Socket event?
+  } elsif (@ready) {
+
+    # Accept new connections
+    foreach my $ready (@ready) {
+      my $peer = $ready->accept();
+
+      # Read next wakeup time and drop connection
+      my $line = <$peer>;
+      close($peer);
+
+      # Update timeout value
+      my $time = int($line);
+      $timeout = $time - time() + WATCHDOG_GUARD;
+      print "Next wakeup at ", scalar(localtime($time)), "\n";
+      if ($timeout <= WATCHDOG_GUARD) {
+	print "Invalid wakeup time, using fallback timout!\n";
+	$timeout = MAX_TIMEOUT;
+      }
+    }
+
+  # Timeout
+  } else {
+
+    # OK, mediabox didn't wake up. Kick it!
+    print "Timeout expired at ", scalar(localtime(time())), "\n";
+    print "system failure $?: $!\n"
+      unless (system(ETHERWAKE) == 0);
+
+    # Reset timeout (should be overwritten by mediabox at next hibernate)
+    $timeout = MAX_TIMEOUT;
+  }
+}
+
+# Cleanup
+undef $select;
+close($socket);
+print "DONE at ", scalar(localtime(time())), "\n";
+
+# That's all folks...
+exit 0;
