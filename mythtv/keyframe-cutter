@@ -1,0 +1,380 @@
+#!/usr/bin/perl -w
+use 5.030;
+use strict;
+use warnings;
+
+###############################################################################
+#
+# User Job Script to cut recording
+#
+# - requires that recording has a cut list
+# - all cuts must be keyframes
+# - all streams are copied, nothing is transcoded
+#
+###############################################################################
+
+use DBI;
+use File::Spec;
+use Getopt::Long;
+use MythTV;
+use POSIX qw(:sys_resource_h);
+
+###############################################################################
+#
+# Update job informationpackage
+#
+###############################################################################
+# See https://www.mythtv.org/wiki/Jobqueue_table
+use constant JOB_STATUS_RUNNING  => 0x0004;
+use constant JOB_STATUS_FINISHED => 0x0110;
+use constant JOB_STATUS_ERRORED  => 0x0130;
+sub update_job($$$$) {
+    my($dbh, $id, $status, $comment) = @_;
+
+    if ($dbh && $id) {
+	my $sth = $dbh->prepare(
+	    <<END_OF_UPDATE
+UPDATE jobqueue
+    SET
+	status     = ?,
+	comment    = ?,
+	statustime = CURRENT_TIME
+    WHERE
+	id = ?
+END_OF_UPDATE
+	    );
+	$sth->execute($status, $comment, $id);
+    } else {
+	print "PROGRESS (${status}): ${comment}\n";
+    }
+}
+
+use constant ERROR_INVALID_DATA   => 10;
+use constant ERROR_COMMAND_FAILED => 20;
+use constant ERROR_IO             => 30;
+sub abort($$$$) {
+    my($dbh, $id, $rc, $msg) = @_;
+    update_job($dbh, $id, JOB_STATUS_ERRORED, $msg);
+    exit($rc);
+    # does not return
+}
+
+sub finished($$$) {
+    my($dbh, $id, $msg) = @_;
+    update_job($dbh, $id, JOB_STATUS_FINISHED, $msg);
+    exit(0);
+    # does not return
+}
+
+sub progress($$$) {
+    my($dbh, $id, $msg) = @_;
+    update_job($dbh, $id, JOB_STATUS_RUNNING, $msg);
+}
+
+sub run_command($$$) {
+    my($dbh, $id, $cmd) = @_;
+    system(@{ $cmd }) == 0
+	or abort($dbh, $id, ERROR_COMMAND_FAILED, "system '@{ $cmd }' failed: $?");
+}
+
+###############################################################################
+#
+# Cut list handling
+#
+###############################################################################
+use constant TYPE_CUT_END   => 0;
+use constant TYPE_CUT_START => 1;
+sub generate_cutlist($$$$$) {
+    my($dbh, $id, $dry, $basename, $total) = @_;
+
+    progress($dbh, $id, "fetching cut list");
+
+    # count all cuts
+    my $sth = $dbh->prepare(
+	<<END_OF_COUNT
+SELECT COUNT(mark)
+    FROM recorded,recordedmarkup
+    WHERE
+	recorded.basename  = ?                        AND
+        recorded.chanid    = recordedmarkup.chanid    AND
+        recorded.starttime = recordedmarkup.starttime AND
+	recordedmarkup.type in (0, 1)
+END_OF_COUNT
+	);
+    $sth->execute($basename);
+
+    # make sure that the recording has a cut list
+    if ($sth->rows() < 1) {
+	return [];
+    }
+    my $expected = int($sth->fetchrow_array());
+    if ($expected < 1) {
+	return [];
+    }
+
+    # extract the file offsets of the cuts
+    #
+    # NOTE: if a cut is not at a keyframe then the
+    #       query will return less offsets than cuts
+    #
+    $sth = $dbh->prepare(
+	<<END_OF_SELECT
+SELECT recordedmarkup.type,recordedseek.offset
+    FROM recorded,recordedmarkup,recordedseek
+    WHERE
+	recorded.basename  = ?                        AND
+        recorded.chanid    = recordedmarkup.chanid    AND
+        recorded.starttime = recordedmarkup.starttime AND
+	recordedmarkup.type in (0, 1)                 AND
+        recorded.chanid    = recordedseek.chanid      AND
+        recorded.starttime = recordedseek.starttime   AND
+        recordedseek.type  = 9                        AND
+        recordedseek.mark  = recordedmarkup.mark - 1
+    ORDER BY
+        recordedseek.offset
+END_OF_SELECT
+	);
+    $sth->execute($basename);
+
+    # ensure we have an offset for each cut
+    my $offsets = $sth->rows;
+    abort($dbh, $id, ERROR_INVALID_DATA, "not all cuts are keyframes (expected $expected != ${offsets})")
+	unless $offsets == $expected;
+
+    # generate list of start/end file offsets for each cut
+    my @cutlist;
+    my $end_offset = 0; # cut list can start with TYPE_CUT_START
+    my $start_offset;
+    while (my $aref = $sth->fetchrow_arrayref) {
+	print "SQL\t[", join(",", @{ $aref }), "],\n"
+	    if $dry;
+	my($type, $offset) = @{ $aref };
+	if      ($type eq TYPE_CUT_END) {
+	    $end_offset = $offset;
+	    undef $start_offset;
+
+	} elsif ($type eq TYPE_CUT_START) {
+	    abort($dbh, $id, ERROR_INVALID_DATA, "cut start ${offset} without preceeding cut end")
+		unless defined $end_offset;
+
+	    $start_offset = $offset;
+	    push(@cutlist, [
+		     $end_offset,
+		     $start_offset,
+	    ]);
+
+	    undef $end_offset;
+	} else {
+	    abort($dbh, $id, ERROR_INVALID_DATA, "invalid type '${type}' (${offset}) for recording '${basename}'");
+	}
+    }
+
+    # open-ended cut list, i.e. include everything from here to end
+    push(@cutlist, [$end_offset, $total])
+	if defined $end_offset;
+
+    if ($dry) {
+	print "\t[$_->[0], $_->[1]],\n" foreach @cutlist;
+    }
+
+    return \@cutlist;
+}
+
+###############################################################################
+#
+# ffmpeg processing
+#
+###############################################################################
+sub recording_split($$$$$$$) {
+    my($dbh, $id, $dry, $dir, $file, $basename, $cutlist) = @_;
+    my $cuts  = @{ $cutlist };
+    my @files;
+
+    # try to memory-map input file for better performance
+    open(my $ifh, "< :raw :bytes :mmap", $file)
+	or abort($dbh, $id, ERROR_IO, "can't open file '${file}' for reading: $!");
+
+    foreach my $index (0..$#{ $cutlist }) {
+	progress($dbh, $id, "creating chunk for cut " . ($index + 1) . "/${cuts}");
+
+	my($start, $end) = @{ $cutlist->[$index] };
+	seek($ifh, $start, 0)
+	    or abort($dbh, $id, ERROR_IO, "can't seek to offset ${start}");
+
+	my $length = $end - $start;
+	my $chunk  = File::Spec->catfile(
+	    $dir,
+	    sprintf("%02d_${basename}", $index)
+	);
+
+	if ($dry) {
+	    printf("%s: %12d %12d\n", $chunk, $start, $length);
+	    next;
+	}
+
+	open(my $ofh, "> :raw :bytes", $chunk)
+	    or abort($dbh, $id, ERROR_IO, "can't open file '${chunk}' for writing: $!");
+
+	# NOTE: we need to use a loop, because chunk size might be larger than
+	#       the maximum amount that sysread() will read in one invocation.
+	#       See also: read(2) man page
+	use constant COPY_CHUNK_LENGTH => 100 * 1024 * 1024;
+	while ($length > 0) {
+	    my $wanted = $length > COPY_CHUNK_LENGTH ?
+		COPY_CHUNK_LENGTH : $length;
+	    my $read    = sysread($ifh, my $buffer, $wanted);
+	    abort($dbh, $id, ERROR_IO, "reading ${wanted} (read ${read}) bytes from file '${file}' failed: $!")
+		unless defined $read    && ($wanted == $read);
+	    my $written = syswrite($ofh, $buffer, $wanted);
+	    abort($dbh, $id, ERROR_IO, "writing ${wanted} (wrote ${written}) bytes to file '${chunk}' failed: $!")
+		unless defined $written && ($wanted == $written);
+	    $length -= $wanted;
+	}
+
+	close($ofh)
+	    or abort($dbh, $id, ERROR_IO, "writing to file '${chunk}' failed: $!");
+
+	push(@files, $chunk);
+    }
+
+    close($ifh);
+
+    return \@files;
+}
+
+sub recording_merge($$$$$$) {
+    my($dbh, $id, $dir, $file, $basename, $files) = @_;
+    my $cuts = @{ $files };
+
+    progress($dbh, $id, "merging ${cuts} chunks to new recording");
+
+    # create input file for merge
+    my $filelist = "${file}.txt";
+    open(my $ofh, '>', $filelist)
+	or abort($dbh, $id, ERROR_IO, "can't open file list '${filelist}': $!");
+    print $ofh "file '$_'\n" foreach @{ $files };
+    close($ofh)
+	or abort($dbh, $id, ERROR_IO, "write to file list '${filelist}' failed: $!");
+
+    # merge chunks to new output file
+    my $outfile = File::Spec->catfile($dir, "NEW_${basename}");
+    run_command($dbh, $id, [
+	qw(ffmpeg -y -threads 0 -loglevel fatal -nostats -hide_banner -f concat -safe 0 -i), $filelist,
+	qw(-map 0 -c copy), $outfile
+    ]);
+
+    # remove temporary files
+    progress($dbh, $id, "cleaning up temporary files");
+    unlink(@{ $files }, $filelist);
+
+    return $outfile;
+}
+
+sub recording_replace($$$$$) {
+    my($dbh, $id, $oldfile, $newfile, $delete) = @_;
+
+    progress($dbh, $id, "replacing original recording");
+
+    # replace original with new file
+    if ($delete) {
+	unlink($oldfile);
+    } else {
+	rename($oldfile, "${oldfile}.ORIG");
+    }
+    rename($newfile, $oldfile);
+}
+
+sub recording_clear_lists($$$) {
+    my($dbh, $id, $file) = @_;
+    my @cmd = (qw(mythutil --quiet --video), $file);
+
+    progress($dbh, $id, "clearing cut/commercial lists for recording '${file}'");
+    run_command($dbh, $id, [@cmd, '--clearcutlist']);
+    run_command($dbh, $id, [@cmd, '--clearskiplist']);
+
+}
+
+sub recording_rebuild_index($$$$) {
+    my($dbh, $id, $file, $basename) = @_;
+
+    progress($dbh, $id, "rebuilding index for recording '${file}'");
+    run_command($dbh, $id, [
+	qw(mythcommflag --quiet --rebuild --noprogress --file), $file
+    ]);
+
+    # reset commflagged count
+    my $sth = $dbh->prepare(
+	<<END_OF_COMMFLAGGED
+UPDATE recorded
+    SET commflagged = 0
+    WHERE
+	basename = ?
+END_OF_COMMFLAGGED
+	);
+    $sth->execute($basename);
+    # ignore errors
+}
+
+###############################################################################
+#
+# Main program
+#
+###############################################################################
+# command line processing
+my %Options;
+GetOptions(\%Options,
+	   "delete-original",
+	   "dry-run",
+	   "file=s",
+	   "jobid=i",
+    ) or die "error in command line arguments\n";
+
+die "mandatory parameter is missing\n"
+    unless defined $Options{file};
+
+# lower priority of our processes
+setpriority(PRIO_PROCESS, 0, -20);
+
+# connect to mythtv database
+my $Myth = new MythTV({connect => 0});
+my $dbh  = $Myth->{dbh};
+
+my($delete, $dry, $file, $id) =
+    @Options{qw(delete-original dry-run file jobid)};
+my(undef, $dir, $basename) = File::Spec->splitpath(File::Spec->rel2abs($file));
+
+# get length of original file
+my $total = -s $file;
+abort($dbh, $id, ERROR_IO, "can't determine length of file '${file}': $!")
+    unless $total;
+
+# get cut list
+my $cutlist = generate_cutlist($dbh, $id, $dry, $basename, $total);
+unless (@{ $cutlist }) {
+    finished($dbh, $id, "no cut list found for recording '${file}'.");
+}
+
+# split, merge & replace
+my $files = recording_split($dbh, $id, $dry, $dir, $file, $basename, $cutlist);
+unless ($dry) {
+    my $newfile = recording_merge($dbh, $id, $dir, $file, $basename, $files);
+
+    # get length of new file
+    my $newtotal = -s $newfile;
+    abort($dbh, $id, ERROR_IO, "can't determine length of file '${newfile}': $!")
+	unless $newtotal;
+
+    # replace original file with new file
+    recording_replace($dbh, $id, $file, $newfile, $delete);
+
+    # update MythTV information for new recording
+    recording_clear_lists($dbh, $id, $file);
+    recording_rebuild_index($dbh, $id, $file, $basename);
+
+    my $chunks  = @{ $files };
+    my $savings = sprintf("%.1f", 100.0 * ($total - $newtotal) / $total);
+    finished($dbh, $id, "${chunks} part(s) have been merged for recording '${file}'. Recording size shrunk by ${savings}%");
+}
+
+# That's all folks...
+exit 0;
