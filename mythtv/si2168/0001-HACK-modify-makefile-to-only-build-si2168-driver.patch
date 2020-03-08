@@ -1,0 +1,48 @@
+From 18e3002e70e89b6076810bbe36e591f1085f22ac Mon Sep 17 00:00:00 2001
+From: Stefan Becker <chemobejk@gmail.com>
+Date: Fri, 8 Mar 2019 07:48:06 +0200
+Subject: [PATCH 1/2] HACK: modify makefile to only build si2168 driver
+
+---
+ drivers/media/dvb-frontends/Makefile | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/drivers/media/dvb-frontends/Makefile b/drivers/media/dvb-frontends/Makefile
+index e917916265..3ad9be198e 100644
+--- a/drivers/media/dvb-frontends/Makefile
++++ b/drivers/media/dvb-frontends/Makefile
+@@ -3,6 +3,8 @@
+ # Makefile for the kernel DVB frontend device drivers.
+ #
+ 
++ifneq ($(KERNELRELEASE),)
++ifeq (0,1)
+ ccflags-y += -I$(srctree)/drivers/media/tuners/
+ 
+ # FIXME: RTL2832 SDR driver uses power management directly from USB IF driver
+@@ -87,7 +89,9 @@ obj-$(CONFIG_DVB_CX24116) += cx24116.o
+ obj-$(CONFIG_DVB_CX24117) += cx24117.o
+ obj-$(CONFIG_DVB_CX24120) += cx24120.o
+ obj-$(CONFIG_DVB_SI21XX) += si21xx.o
++endif
+ obj-$(CONFIG_DVB_SI2168) += si2168.o
++ifeq (0,1)
+ obj-$(CONFIG_DVB_STV0288) += stv0288.o
+ obj-$(CONFIG_DVB_STB6000) += stb6000.o
+ obj-$(CONFIG_DVB_S921) += s921.o
+@@ -133,3 +137,12 @@ obj-$(CONFIG_DVB_HELENE) += helene.o
+ obj-$(CONFIG_DVB_ZD1301_DEMOD) += zd1301_demod.o
+ obj-$(CONFIG_DVB_CXD2099) += cxd2099.o
+ obj-$(CONFIG_DVB_CXD2880) += cxd2880/
++endif
++
++else
++
++.PHONY: modules modules_install
++modules modules_install:
++	$(MAKE) -C /lib/modules/$$(uname -r)/build M=$(CURDIR) $@
++
++endif
+-- 
+2.24.1
+

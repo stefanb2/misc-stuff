@@ -1,0 +1,54 @@
+From c38cf0bf0b367de5e77cadd1a6000265aee9795c Mon Sep 17 00:00:00 2001
+From: Stefan Becker <chemobejk@gmail.com>
+Date: Fri, 8 Mar 2019 18:57:43 +0200
+Subject: [PATCH 2/2] media: si2168: add parameter to disable DVB-T support
+
+Some DVB clients are broken and only recognize the DVB-T/T2 support in
+the frontend. Thus they are unable to use the frontend in DVB-C mode.
+One example is the incomplete DVBv5 API support added in mythtv 0.30:
+
+   https://code.mythtv.org/trac/ticket/12638
+
+The boolean module parameter "disable_dvb_t" removes DVB-T and DVB-T2
+from the delsys list in dvb_frontend_ops and thus forces the client to
+recognize a DVB-C frontend.
+
+Signed-off-by: Stefan Becker <chemobejk@gmail.com>
+---
+ drivers/media/dvb-frontends/si2168.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/drivers/media/dvb-frontends/si2168.c b/drivers/media/dvb-frontends/si2168.c
+index 14b93a7d33..aacf0f02ae 100644
+--- a/drivers/media/dvb-frontends/si2168.c
++++ b/drivers/media/dvb-frontends/si2168.c
+@@ -5,10 +5,15 @@
+  * Copyright (C) 2014 Antti Palosaari <crope@iki.fi>
+  */
+ 
++#include <linux/module.h>
+ #include <linux/delay.h>
+ 
+ #include "si2168_priv.h"
+ 
++static bool disable_dvb_t;
++module_param(disable_dvb_t, bool, 0644);
++MODULE_PARM_DESC(disable_dvb_t, "Disable DVB-T/T2 support (default: enabled)");
++
+ static const struct dvb_frontend_ops si2168_ops;
+ 
+ static void cmd_init(struct si2168_cmd *cmd, const u8 *buf, int wlen, int rlen)
+@@ -742,6 +747,10 @@ static int si2168_probe(struct i2c_client *client,
+ 
+ 	/* create dvb_frontend */
+ 	memcpy(&dev->fe.ops, &si2168_ops, sizeof(struct dvb_frontend_ops));
++	if (disable_dvb_t) {
++		memset(dev->fe.ops.delsys, 0, sizeof(dev->fe.ops.delsys));
++		dev->fe.ops.delsys[0] = SYS_DVBC_ANNEX_A;
++	}
+ 	dev->fe.demodulator_priv = client;
+ 	*config->i2c_adapter = dev->muxc->adapter[0];
+ 	*config->fe = &dev->fe;
+-- 
+2.24.1
+
