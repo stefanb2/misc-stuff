@@ -1,0 +1,28 @@
+#!/bin/bash
+#set -x
+
+# run embedded bash script in background and exit
+setsid &>/dev/null /bin/bash - <<'END_OF_SCRIPT' &
+_choice=0 # 0 - toggle, 1 - cancel
+while [[ ${_choice} -eq 0 ]]; do
+
+    # toggle DPMS
+    if [[ "$(xset -q | grep 'DPMS is')" == *Enabled* ]]; then
+	xset -dpms
+	_msg="disabled"
+    else
+	xset +dpms
+	_msg="enabled"
+    fi
+
+    # open dialog
+    kdialog --title "DPMS ${_msg}" --yes-label "Toggle" --no-label "Exit" --yesno "DPMS is ${_msg}"
+    _choice=$?
+done
+
+# That's all folks...
+exit 0
+END_OF_SCRIPT
+
+# That's all folks...
+exit 0
