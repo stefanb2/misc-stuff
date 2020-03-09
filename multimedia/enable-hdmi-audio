@@ -1,0 +1,14 @@
+#!/bin/bash
+#set -x
+_device="hdmi-playback"
+_card="alsa_card.pci-0000_01_00.1"
+_output="hdmi-stereo-extra2"
+_sink="${_card/_card/_output}.${_output}"
+
+# make HDMI output visible to pulseaudio
+aplay -D${_device} </dev/null
+
+# tell pulsaudio to switch to correct profile and unsuspend the sink
+pacmd set-card-profile ${_card} off
+pacmd set-card-profile ${_card} output:${_output}
+pacmd suspend-sink     ${_sink} false
