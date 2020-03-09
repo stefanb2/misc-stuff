@@ -1,0 +1,7 @@
+FontText: "Monospace,9,-1,5,50,0,0,0,0,0"
+Color.DiffAll.Back: "#ff0000"
+Color.DiffAllNonly.Back: "#ffff00"
+Color.DiffAllOnly.Back: "#ff0000"
+Color.DiffAllSup.Back: "#ffff00"
+Color.Insert.Back: "#66bbff"
+Color.InsertBlank.Back: "#66bbff"
