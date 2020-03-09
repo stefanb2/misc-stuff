@@ -1,0 +1,5 @@
+pcm.hdmi-playback {
+        type hw
+        card 1
+        device 8
+}
