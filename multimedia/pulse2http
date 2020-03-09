@@ -1,0 +1,169 @@
+#!/usr/bin/perl
+use warnings;
+use strict;
+use HTTP::Response;
+use POE qw(
+  Wheel::Run
+  Component::Server::TCP
+  Filter::HTTPD
+  Filter::Line
+  Filter::Stream);
+
+###############################################################################
+#
+# CONFIGURATION
+#
+###############################################################################
+# Command to list sources: pactl list sources
+use constant PULSE_DEVICE   => "alsa_output.pci-0000_01_00.1.hdmi-stereo-extra2.monitor";
+use constant RECORDER       => "parec --record --client-name=pulse2http --stream-name=httpstream --device='%s' --volume=65536 --rate=44100 --channels=2 --format=s16le --latency=176400";
+#use constant ENCODING_TYPE  => "aac";
+#use constant ENCODER        => "faac -P -R 44100 -C 2 -B 16 -X -b 256 -q 200 -o - -";
+use constant ENCODING_TYPE  => "mpeg";
+use constant ENCODER        => "lame -r -s 44.1 --bitwidth 16 --signed --little-endian --noreplaygain --preset insane - -";
+use constant STREAM_PORT    => 9000;
+
+
+###############################################################################
+#
+# Background session that runs the audio recorder & encoder
+#
+###############################################################################
+my $pid;
+sub _start {
+    my ($kernel, $heap) = @_[KERNEL, HEAP];
+    $heap->{child} = POE::Wheel::Run->new(
+	Program => (sprintf(RECORDER, PULSE_DEVICE) . " | " . ENCODER),
+	StdioFilter  => POE::Filter::Stream->new(),  # Child dumps binary data
+	StderrFilter => POE::Filter::Line->new(),    # Child speaks in lines.
+	StdoutEvent  => "got_child_stdout",          # Child wrote to STDOUT.
+	StderrEvent  => "got_child_stderr",          # Child wrote to STDERR.
+	CloseEvent   => "got_child_close",           # Child stopped writing.
+	);
+    $pid = $heap->{child}->PID;
+    $kernel->sig_child($pid, "got_sigchld");
+    print STDERR "Background session for pulseaudio recorder & encoder started.\n";
+}
+
+# Broadcast chunk of streaming data to all sessions
+sub got_child_stdout {
+    my($kernel, $data) = @_[KERNEL, ARG0];
+    $kernel->signal($kernel, 'StreamData', $data);
+}
+
+# Send a chunk of the streaming data to the client
+sub got_stream_data { $_[HEAP]->{client}->put($_[ARG1]) }
+
+# Deal with information the child wrote to its STDERR.  These are
+# warnings and possibly error messages.
+sub got_child_stderr {
+    my $stderr = $_[ARG0];
+    $stderr =~ tr[ -~][]cd;
+    print STDERR "ENCODER: $stderr\n";
+}
+
+sub do_shutdown {
+    my($has_died) = @_;
+    unless ($has_died) {
+	print STDERR "pulse2http going down...\n";
+	kill(-1 => $pid) if $pid;
+    }
+    $poe_kernel->call('web_server', 'shutdown');
+    $poe_kernel->signal($poe_kernel, 'PleaseShutdown');
+}
+
+# The child has closed its output filehandles, exit program
+sub got_child_close {
+    print STDERR "pulseaudio recorder & encoder process closed.\n";
+    delete $_[HEAP]->{child};
+    do_shutdown(1);
+}
+
+# Shutdown a streaming session
+sub got_shutdown { $_[KERNEL]->yield('shutdown') }
+
+# Handle SIGCHLD, otherwise the child process will not be reaped.
+sub got_sigchld { }
+
+# Create session
+POE::Session->create(package_states => [main => [
+					    qw(_start
+                                               got_child_stdout
+                                               got_child_stderr
+                                               got_child_close
+                                               got_sigchld
+                                              )]]);
+
+
+###############################################################################
+#
+# Spawn a web server on port STREAM_PORT of all interfaces.
+#
+###############################################################################
+POE::Component::Server::TCP->new(
+    Alias         => "web_server",
+    Port          => STREAM_PORT,
+    ClientFilter  => 'POE::Filter::HTTPD',
+    PackageStates => [main => [qw(got_stream_data
+                                  got_shutdown
+                                 )]],
+
+    # Output has been flushed to the client.  If the output was
+    # headers, open and begin streaming content.  Otherwise continue
+    # streaming content until it has all been sent.  An error, such as
+    # when the user stops a transfer, will also halt the stream.
+    ClientFlushed => sub {
+	my($kernel, $heap) = @_[KERNEL, HEAP];
+
+	# The first flush means that headers were sent. Register to broadcasts
+	# and switch to POE's Stream filter.  This allows the content to pass
+	# through POE without being changed.
+	unless ($heap->{_registered}) {
+	    $kernel->sig(StreamData     => 'got_stream_data');
+	    $kernel->sig(PleaseShutdown => 'got_shutdown');
+	    $heap->{client}->set_output_filter(POE::Filter::Stream->new());
+	    $heap->{_registered}++;
+	}
+    },
+
+    # A request has been received from the client.  We ignore its
+    # content, but the server could be expanded to stream different
+    # files based on what was asked here.
+    ClientInput => sub {
+	my($kernel, $heap, $request) = @_[KERNEL, HEAP, ARG0];
+
+	# Filter::HTTPD sometimes generates HTTP::Response objects.
+	# They indicate (and contain the response for) errors.  It's
+	# easiest to send the responses as they are and finish up.
+	if ($request->isa("HTTP::Response")) {
+	    $heap->{client}->put($request);
+	    $kernel->yield("shutdown");
+	    return;
+	}
+
+	# The request is real and fully formed.  Create and send back
+	# headers in preparation for streaming the music.
+	print STDERR "Received new request from $heap->{remote_ip}:$heap->{remote_port}\n";
+	my $response = HTTP::Response->new(200);
+	$response->push_header('Content-type',  'audio/' . ENCODING_TYPE);
+	$response->push_header('Server',        'pulse2http');
+	$response->push_header('Cache-Control', 'no-cache');
+	$heap->{client}->put($response);
+
+	# Note that we do not shut down here.  Once the response's
+	# headers are flushed, the ClientFlushed callback will begin
+	# streaming the actual content.
+    },
+
+    ClientDisconnected => sub {
+	my($heap) = $_[HEAP];
+	print STDERR "Closing session to $heap->{remote_ip}:$heap->{remote_port}\n";
+    }
+);
+
+# install signal handlers to initiate controlled shutdown
+$SIG{HUP} = $SIG{INT} = $SIG{TERM} = sub { do_shutdown(); };
+
+# Run POE's Kernel (and thus all its sessions) until done.
+POE::Kernel->run();
+exit 0;
