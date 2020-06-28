@@ -116,6 +116,57 @@ sub load_configuration() {
 
 ##############################################################################
 #
+# Image conversion
+#
+##############################################################################
+sub convert_image($$)
+{
+	my($base, $content) = @_;
+	my $tempfile = "${tempdir}/temp.img";
+
+	# dump URL content as binary data to temporary file for conversion
+	if (open(my $fh, '>:raw', $tempfile)) {
+		print $fh $content;
+
+		if (close($fh)) {
+			# extract image information
+			if (open($fh, '-|', 'convert', $tempfile, qw{-identify /dev/null})) {
+				my $line = <$fh>;
+				close($fh);
+
+				if (my($x, $y) = ($line =~ /\s(\d+)x(\d+)\s/)) {
+					# auto-rotation detect
+					my @rotate = ($x > $y) ? (-rotate => $config{image}->{rotate}) : ();
+					my $basename = "${base}." . $config{image}->{type};
+
+					if (system(
+						'convert', $tempfile,
+						@rotate,
+						'-scale', $config{image}->{scale},
+						File::Spec->catfile($tempdir, $basename)
+					) == 0) {
+						return $basename;
+					} else {
+						print STDERR "Picture conversion failed: $!\n";
+					}
+				} else {
+					print STDERR "Couldn't extract image dimensions: ${line}";
+				}
+			} else {
+				print STDERR "Couldn't start image identifier: $!\n";
+			}
+		} else {
+			print STDERR "Couldn't save image to file: $!\n";
+		}
+	} else {
+		print STDERR "Couldn't open image file: $!\n";
+	}
+
+	return;
+}
+
+##############################################################################
+#
 # Main program
 #
 ##############################################################################
