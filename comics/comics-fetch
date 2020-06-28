@@ -167,6 +167,52 @@ sub convert_image($$)
 
 ##############################################################################
 #
+# HTML generation
+#
+##############################################################################
+{
+	my @nodes;
+
+	sub get_nodes() {
+		return \@nodes;
+	}
+
+	sub create_node() {
+		return HTML::Element->new('div');
+	}
+
+	sub add_node($) {
+		my($node) = @_;
+		my $html = $node->as_HTML();
+		#print STDERR "HTML: ${html}\n";
+		push(@nodes, "${html}\n");
+	}
+
+	sub add_image_node($$) {
+		my($filename, $extra) = @_;
+		my $node = create_node();
+		$node->push_content(
+			HTML::Element->new('img',
+				src => $filename,
+				%{$extra}
+			)
+		);
+		add_node($node);
+	}
+
+	sub add_error_node($$) {
+		my($base, $msg) = @_;
+		my $node = create_node();
+		$node->push_content(
+			HTML::Element->new('p')
+				->push_content("${base}: ${msg}")
+		);
+		add_node($node);
+	}
+}
+
+##############################################################################
+#
 # Main program
 #
 ##############################################################################
