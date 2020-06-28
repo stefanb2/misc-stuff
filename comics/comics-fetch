@@ -320,17 +320,66 @@ END_OF_HTML
 
 ##############################################################################
 #
+# Mail handling
+#
+##############################################################################
+sub send_mail($$) {
+	my($fullpath, $basename) = @_;
+	my $from = $config{mail}->{from};
+	my $to   = $config{mail}->{to};
+
+	# generate MIME message
+	my $msg = MIME::Lite->new(
+		From    => $from,
+		To      => $to,
+		Subject => $config{mail}->{subject},
+		Type    => 'multipart/mixed',
+	);
+	$msg->attach(
+		Type	=> 'TEXT',
+		Data	=> $config{mail}->{greeting},
+	);
+	$msg->attach(
+		Type	    => $config{mail}->{type},,
+		Path	    => $fullpath,
+		Filename    => $basename,
+		Disposition => 'attachment',
+	);
+
+	# SMTP client
+	my $smtp = Net::SMTP->new($config{mail}->{host},
+		Port     => $config{mail}->{port},
+		#Debug    => 1,
+		Timeout  => $config{mail}->{timeout},
+	);
+	if ($smtp) {
+		$smtp->starttls();
+		# Requires Authen::SASL
+		$smtp->auth($from, $config{mail}->{password});
+		$smtp->mail($from);
+		$smtp->to($to);
+		$smtp->data();
+		$smtp->datasend($msg->as_string());
+		$smtp->dataend();
+		$smtp->quit();
+		print "mail sent\n";
+	} else {
+		print STDERR "can't send mail: $@\n";
+	}
+}
+
+##############################################################################
+#
 # Main program
 #
 ##############################################################################
 
 my %Options = (
-	output => DEFAULT_FILENAME,
+	mail => 1,
 );
 
 GetOptions(\%Options,
 	"mail!",
-	"output=s",
 ) or fail("can't parse command line options");
 load_configuration();
 http_init();
@@ -338,15 +387,15 @@ $tempdir = tempdir(CLEANUP => 1)
 	or fail("can't create temorary directory: $!");
 print "Temporary directory '${tempdir}'\n";
 
-my $ebook = $Options{output};
-if ($Options{mail}) {
-	$ebook = File::Spec->catfile($tempdir, $ebook);
-}
+my $ebook = $config{ebook}->{filename};
+$ebook = File::Spec->catfile($tempdir, $ebook)
+	if $Options{mail};
 
 # TODO: fetch comics....
 
 if (generate_ebook($ebook)) {
-	# TBD... if ($Options{mail});
+	send_mail($ebook, $config{ebook}->{filename})
+		if $Options{mail};
 }
 
 # That's all folks
