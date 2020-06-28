@@ -75,6 +75,47 @@ sub load_configuration() {
 
 ##############################################################################
 #
+# HTTP handling
+#
+##############################################################################
+{
+	my $ua;
+
+	sub http_init() {
+		$ua = LWP::UserAgent->new();
+		$ua->env_proxy();
+		# some pages want us to fake it, so there you go...
+		$ua->agent($config{http}->{useragent});
+		$ua->default_header('Accept-Encoding' => scalar(HTTP::Message::decodable()));
+		#$ua->show_progress(0);
+	}
+
+	sub get($;$) {
+		my($url, $timeout) = @_;
+		my $retries = $config{http}->{retries};
+		my $r;
+
+		$ua->timeout($timeout // $config{http}->{timeout});
+		while ($retries--) {
+			$r = $ua->get($url);
+			if ($r->is_success) {
+				#print STDERR "HTTP REQUEST: \n", $r->request->as_string, "\n";
+				#print STDERR "HTTP RESPONSE: \n", $r->headers_as_string, "\n";
+				#print STDERR "LENGTH: ", length($r->content), "\n";
+				#print STDERR "HTML: \n", $r->content, "\n";
+				my $content = $r->decoded_content;
+				#print STDERR "HTML: \n", $content, "\n";
+				return(defined($content) ? $content : $r->content);
+			}
+		}
+
+		print STDERR "HTTP fetch error: ", $r->status_line, "\n";
+		return;
+	}
+}
+
+##############################################################################
+#
 # Main program
 #
 ##############################################################################
@@ -88,6 +129,7 @@ GetOptions(\%Options,
 	"output=s",
 ) or fail("can't parse command line options");
 load_configuration();
+http_init();
 $tempdir = tempdir(CLEANUP => 1)
 	or fail("can't create temorary directory: $!");
 print "Temporary directory '${tempdir}'\n";
