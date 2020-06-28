@@ -1,0 +1,101 @@
+#!/usr/bin/perl -w
+use 5.030;
+use strict;
+use warnings;
+use open qw(:encoding(UTF-8) :std);
+
+#
+# External programs called from this scriot
+#
+#    convert       (ImageMagick)
+#    ebook-convert (calibre)
+#
+# from perl-TimeDate
+use Date::Format;
+use File::Spec;
+use File::Temp qw(tempdir);
+use Getopt::Long;
+# from perl-HTML-Tree
+use HTML::TreeBuilder;
+# requires also LWP::Protocol::https
+use LWP::UserAgent;
+use MIME::Base64;
+use MIME::Lite;
+# requires also Authen::SASL
+use Net::SMTP;
+
+##############################################################################
+#
+# Misc. stuff
+#
+##############################################################################
+sub fail($) {
+	my($msg) = @_;
+	die "$0: ABORT: ${msg}\n";
+	# does not return
+}
+
+# working directory
+my $tempdir;
+
+use constant DEFAULT_FILENAME => "comics.mobi";
+
+##############################################################################
+#
+# Configuration file
+#
+##############################################################################
+my %config;
+sub load_configuration() {
+	open(my $fh, '<', "$ENV{HOME}/.comics-fetch.config")
+		or die("can't open configuration file: $!");
+
+	while (<$fh>) {
+		# remove comments and skip empty lines
+		chomp;
+		s/\s*#.*$//;
+		next if /^\s*$/;
+
+		my($section, $key, $value) = /^\s*(\w+)\.(\w+)\s*=\s*(.+)$/
+			or fail("broken config line $.: $_");
+		$value =~ s/\s+$//;
+
+		$config{$section}->{$key} = $value;
+	}
+
+	close($fh);
+
+	#foreach my $section (sort keys %config) {
+	#	foreach my $key (sort keys %{ $config{$section} }) {
+	#		my $value = $config{$section}->{$key};
+	#		say "${section} ${key} '${value}'";
+	#	}
+	#}
+}
+
+##############################################################################
+#
+# Main program
+#
+##############################################################################
+
+my %Options = (
+	output => DEFAULT_FILENAME,
+);
+
+GetOptions(\%Options,
+	"mail!",
+	"output=s",
+) or fail("can't parse command line options");
+load_configuration();
+$tempdir = tempdir(CLEANUP => 1)
+	or fail("can't create temorary directory: $!");
+print "Temporary directory '${tempdir}'\n";
+
+my $ebook = $Options{output};
+if ($Options{mail}) {
+	$ebook = File::Spec->catfile($tempdir, $ebook);
+}
+
+# That's all folks
+exit 0;
