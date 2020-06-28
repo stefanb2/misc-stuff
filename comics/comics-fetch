@@ -213,6 +213,30 @@ sub convert_image($$)
 
 ##############################################################################
 #
+# Low-level comics content handling
+#
+##############################################################################
+# get a single image for URL from image URL
+sub get_image($$$;$)
+{
+	my($url, $base, $imgurl, $extra) = @_;
+
+	#print STDERR "IMAGE URL: ${imgurl}\n";
+	if (my $content = get($imgurl)) {
+		if (my $basename = convert_image($base, $content)) {
+			add_image_node($basename, $extra);
+			print "comic fetched from '$url'\n";
+			return;
+		}
+	} else {
+		print STDERR "Couldn't get page '${imgurl}': $!\n";
+	}
+
+	add_error_node($base, "couldn't fetch image");
+}
+
+##############################################################################
+#
 # Main program
 #
 ##############################################################################
