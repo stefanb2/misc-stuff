@@ -160,8 +160,7 @@ sub load_configuration() {
 # Image conversion
 #
 ##############################################################################
-sub convert_image($$)
-{
+sub convert_image($$) {
     my($base, $content) = @_;
     my $tempfile = "${tempdir}/temp.img";
 
@@ -258,8 +257,7 @@ sub convert_image($$)
 #
 ##############################################################################
 # get a single image for URL from image URL
-sub get_image($$$;$)
-{
+sub get_image($$$;$) {
     my($url, $base, $imgurl, $extra) = @_;
 
     #print STDERR "IMAGE URL: ${imgurl}\n";
@@ -277,8 +275,7 @@ sub get_image($$$;$)
 }
 
 # get a single comic for URL
-sub get_comic($$$$)
-{
+sub get_comic($$$$) {
     my($url, $base, $timeout, $code) = @_;
 
     #print STDERR "COMIC URL: ${url}\n";
@@ -311,6 +308,38 @@ sub get_comic($$$$)
 
     # always release DOM tree after we're done!
     $tree->delete();
+}
+
+##############################################################################
+#
+# Support for some comics pages
+#
+##############################################################################
+# simple case:
+# - look for a DOM node
+# - locate the IMG tag inside it
+# - generate URL from the image SRC attribute
+sub get_comic_simple($$$@) {
+    my($url, $base, $timeout, @lookdown) = @_;
+
+    get_comic(
+        $url,
+        $base,
+        $timeout,
+        sub {
+            my($tree) = @_;
+            my $url;
+
+            my $node = $tree->look_down(@lookdown);
+            if ($node) {
+                my $img = $node->find('img');
+                ($url = $img->attr('src'))
+                    =~ s,^//,https://, if $img;
+            }
+
+            return($url ? $url : ());
+        }
+    );
 }
 
 ##############################################################################
