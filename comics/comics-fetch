@@ -357,6 +357,25 @@ sub get_comic_gocomics($) {
     );
 }
 
+# King Features
+sub get_comic_kingfeatures($$$) {
+    my($base, $prefix, $subpath) = @_;
+    my @today = localtime(time());
+
+    # Extracted from JS code - yep, security by obscurity...
+    my $file = strftime(
+        sprintf("%s/%%Y/%%m/%s%s.%%Y%%m%%d_900.gif",
+                $prefix, $subpath,
+                # File template is different on weekdays / sunday (6 == wday)
+                $today[6] == 0 ? "_ntb" : ""
+        ), @today);
+
+    print "$file\n";
+    my $url  = 'https://safr.kingfeatures.com/api/img.php?e=gif&s=c&file='
+        . encode_base64($file, '');
+    get_image($url, $base, $url);
+}
+
 ##############################################################################
 #
 # E-Book generation
@@ -377,7 +396,7 @@ sub generate_ebook($) {
   <meta http-equiv="Content-Language" content="en" />
 </head>
 <body>
-  @nodes
+ @nodes
 </body>
 END_OF_HTML
 
