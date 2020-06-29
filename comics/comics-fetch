@@ -353,18 +353,22 @@ sub send_mail($$) {
 		Timeout  => $config{mail}->{timeout},
 	);
 	if ($smtp) {
-		$smtp->starttls();
-		# Requires Authen::SASL
-		$smtp->auth($from, $config{mail}->{password});
-		$smtp->mail($from);
-		$smtp->to($to);
-		$smtp->data();
-		$smtp->datasend($msg->as_string());
-		$smtp->dataend();
-		$smtp->quit();
-		print "mail sent\n";
+		if ($smtp->starttls()  &&
+			# Requires Authen::SASL
+			$smtp->auth($from, $config{mail}->{password}) &&
+			$smtp->mail($from) &&
+			$smtp->to($to)     &&
+			$smtp->data()      &&
+			$smtp->datasend($msg->as_string()) &&
+			$smtp->dataend()   &&
+			$smtp->quit()
+		) {
+			print "mail sent\n";
+		} else {
+			print STDERR "can't send mail: " . $smtp->message() . "\n";
+		}
 	} else {
-		print STDERR "can't send mail: $@\n";
+		print STDERR "can't connect to SMTP server: $@\n";
 	}
 }
 
