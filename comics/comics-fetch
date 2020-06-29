@@ -75,6 +75,47 @@ sub load_configuration() {
 
 ##############################################################################
 #
+# Comics configuration
+#
+##############################################################################
+
+{
+    my $code;
+
+    sub load_comics() {
+        use FindBin;
+        my $dir = File::Spec->catfile($FindBin::Bin, "${FindBin::Script}.d");
+        #print "$dir\n";
+        push(@INC, $dir);
+
+        my $matcher = File::Spec->catfile($dir, '??_*.pm');
+        #print "$matcher\n";
+
+        my @lines;
+        foreach my $match (sort glob($matcher)) {
+            my(undef, undef, $module) = File::Spec->splitpath($match);
+            my($package) = $module =~ /^\d{2}_(\w+)\.pm$/
+                or fail("comics module with invalid name '${module}'");
+            #print "$module\n";
+
+            require $module;
+            push(@lines, "ComicsFetch::${package}::get();\n");
+        }
+        fail("couldn't find any comics modules")
+            unless @lines;
+        #print @lines;
+
+        $code = eval "sub { @lines }"
+            or fail("can't compile fetch code: $@");
+    }
+
+    sub fetch_comics() {
+        $code->();
+    }
+}
+
+##############################################################################
+#
 # HTTP handling
 #
 ##############################################################################
@@ -386,6 +427,7 @@ GetOptions(\%Options,
     "mail!",
 ) or fail("can't parse command line options");
 load_configuration();
+load_comics();
 http_init();
 $tempdir = tempdir(CLEANUP => 1)
     or fail("can't create temorary directory: $!");
@@ -395,7 +437,8 @@ my $ebook = $config{ebook}->{filename};
 $ebook = File::Spec->catfile($tempdir, $ebook)
     if $Options{mail};
 
-# TODO: fetch comics....
+fetch_comics();
+#print @{ get_nodes() };
 
 if (generate_ebook($ebook)) {
     send_mail($ebook, $config{ebook}->{filename})
