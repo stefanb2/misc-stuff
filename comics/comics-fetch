@@ -30,9 +30,9 @@ use Net::SMTP;
 #
 ##############################################################################
 sub fail($) {
-	my($msg) = @_;
-	die "$0: ABORT: ${msg}\n";
-	# does not return
+    my($msg) = @_;
+    die "$0: ABORT: ${msg}\n";
+    # does not return
 }
 
 # working directory
@@ -47,30 +47,30 @@ use constant DEFAULT_FILENAME => "comics.mobi";
 ##############################################################################
 my %config;
 sub load_configuration() {
-	open(my $fh, '<', "$ENV{HOME}/.comics-fetch.config")
-		or die("can't open configuration file: $!");
+    open(my $fh, '<', "$ENV{HOME}/.comics-fetch.config")
+        or die("can't open configuration file: $!");
 
-	while (<$fh>) {
-		# remove comments and skip empty lines
-		chomp;
-		s/\s*#.*$//;
-		next if /^\s*$/;
+    while (<$fh>) {
+        # remove comments and skip empty lines
+        chomp;
+        s/\s*#.*$//;
+        next if /^\s*$/;
 
-		my($section, $key, $value) = /^\s*(\w+)\.(\w+)\s*=\s*(.+)$/
-			or fail("broken config line $.: $_");
-		$value =~ s/\s+$//;
+        my($section, $key, $value) = /^\s*(\w+)\.(\w+)\s*=\s*(.+)$/
+            or fail("broken config line $.: $_");
+        $value =~ s/\s+$//;
 
-		$config{$section}->{$key} = $value;
-	}
+        $config{$section}->{$key} = $value;
+    }
 
-	close($fh);
+    close($fh);
 
-	#foreach my $section (sort keys %config) {
-	#	foreach my $key (sort keys %{ $config{$section} }) {
-	#		my $value = $config{$section}->{$key};
-	#		say "${section} ${key} '${value}'";
-	#	}
-	#}
+    #foreach my $section (sort keys %config) {
+    #    foreach my $key (sort keys %{ $config{$section} }) {
+    #        my $value = $config{$section}->{$key};
+    #        say "${section} ${key} '${value}'";
+    #    }
+    #}
 }
 
 ##############################################################################
@@ -79,39 +79,39 @@ sub load_configuration() {
 #
 ##############################################################################
 {
-	my $ua;
+    my $ua;
 
-	sub http_init() {
-		$ua = LWP::UserAgent->new();
-		$ua->env_proxy();
-		# some pages want us to fake it, so there you go...
-		$ua->agent($config{http}->{useragent});
-		$ua->default_header('Accept-Encoding' => scalar(HTTP::Message::decodable()));
-		#$ua->show_progress(0);
-	}
+    sub http_init() {
+        $ua = LWP::UserAgent->new();
+        $ua->env_proxy();
+        # some pages want us to fake it, so there you go...
+        $ua->agent($config{http}->{useragent});
+        $ua->default_header('Accept-Encoding' => scalar(HTTP::Message::decodable()));
+        #$ua->show_progress(0);
+    }
 
-	sub get($;$) {
-		my($url, $timeout) = @_;
-		my $retries = $config{http}->{retries};
-		my $r;
+    sub get($;$) {
+        my($url, $timeout) = @_;
+        my $retries = $config{http}->{retries};
+        my $r;
 
-		$ua->timeout($timeout // $config{http}->{timeout});
-		while ($retries--) {
-			$r = $ua->get($url);
-			if ($r->is_success) {
-				#print STDERR "HTTP REQUEST: \n", $r->request->as_string, "\n";
-				#print STDERR "HTTP RESPONSE: \n", $r->headers_as_string, "\n";
-				#print STDERR "LENGTH: ", length($r->content), "\n";
-				#print STDERR "HTML: \n", $r->content, "\n";
-				my $content = $r->decoded_content;
-				#print STDERR "HTML: \n", $content, "\n";
-				return(defined($content) ? $content : $r->content);
-			}
-		}
+        $ua->timeout($timeout // $config{http}->{timeout});
+        while ($retries--) {
+            $r = $ua->get($url);
+            if ($r->is_success) {
+                #print STDERR "HTTP REQUEST: \n", $r->request->as_string, "\n";
+                #print STDERR "HTTP RESPONSE: \n", $r->headers_as_string, "\n";
+                #print STDERR "LENGTH: ", length($r->content), "\n";
+                #print STDERR "HTML: \n", $r->content, "\n";
+                my $content = $r->decoded_content;
+                #print STDERR "HTML: \n", $content, "\n";
+                return(defined($content) ? $content : $r->content);
+            }
+        }
 
-		print STDERR "HTTP fetch error: ", $r->status_line, "\n";
-		return;
-	}
+        print STDERR "HTTP fetch error: ", $r->status_line, "\n";
+        return;
+    }
 }
 
 ##############################################################################
@@ -121,48 +121,48 @@ sub load_configuration() {
 ##############################################################################
 sub convert_image($$)
 {
-	my($base, $content) = @_;
-	my $tempfile = "${tempdir}/temp.img";
+    my($base, $content) = @_;
+    my $tempfile = "${tempdir}/temp.img";
 
-	# dump URL content as binary data to temporary file for conversion
-	if (open(my $fh, '>:raw', $tempfile)) {
-		print $fh $content;
+    # dump URL content as binary data to temporary file for conversion
+    if (open(my $fh, '>:raw', $tempfile)) {
+        print $fh $content;
 
-		if (close($fh)) {
-			# extract image information
-			if (open($fh, '-|', 'convert', $tempfile, qw{-identify /dev/null})) {
-				my $line = <$fh>;
-				close($fh);
+        if (close($fh)) {
+            # extract image information
+            if (open($fh, '-|', 'convert', $tempfile, qw{-identify /dev/null})) {
+                my $line = <$fh>;
+                close($fh);
 
-				if (my($x, $y) = ($line =~ /\s(\d+)x(\d+)\s/)) {
-					# auto-rotation detect
-					my @rotate = ($x > $y) ? (-rotate => $config{image}->{rotate}) : ();
-					my $basename = "${base}." . $config{image}->{type};
+                if (my($x, $y) = ($line =~ /\s(\d+)x(\d+)\s/)) {
+                    # auto-rotation detect
+                    my @rotate = ($x > $y) ? (-rotate => $config{image}->{rotate}) : ();
+                    my $basename = "${base}." . $config{image}->{type};
 
-					if (system(
-						'convert', $tempfile,
-						@rotate,
-						'-scale', $config{image}->{scale},
-						File::Spec->catfile($tempdir, $basename)
-					) == 0) {
-						return $basename;
-					} else {
-						print STDERR "Picture conversion failed: $!\n";
-					}
-				} else {
-					print STDERR "Couldn't extract image dimensions: ${line}";
-				}
-			} else {
-				print STDERR "Couldn't start image identifier: $!\n";
-			}
-		} else {
-			print STDERR "Couldn't save image to file: $!\n";
-		}
-	} else {
-		print STDERR "Couldn't open image file: $!\n";
-	}
+                    if (system(
+                        'convert', $tempfile,
+                        @rotate,
+                        '-scale', $config{image}->{scale},
+                        File::Spec->catfile($tempdir, $basename)
+                    ) == 0) {
+                        return $basename;
+                    } else {
+                        print STDERR "Picture conversion failed: $!\n";
+                    }
+                } else {
+                    print STDERR "Couldn't extract image dimensions: ${line}";
+                }
+            } else {
+                print STDERR "Couldn't start image identifier: $!\n";
+            }
+        } else {
+            print STDERR "Couldn't save image to file: $!\n";
+        }
+    } else {
+        print STDERR "Couldn't open image file: $!\n";
+    }
 
-	return;
+    return;
 }
 
 ##############################################################################
@@ -171,44 +171,44 @@ sub convert_image($$)
 #
 ##############################################################################
 {
-	my @nodes;
+    my @nodes;
 
-	sub get_nodes() {
-		return \@nodes;
-	}
+    sub get_nodes() {
+        return \@nodes;
+    }
 
-	sub create_node() {
-		return HTML::Element->new('div');
-	}
+    sub create_node() {
+        return HTML::Element->new('div');
+    }
 
-	sub add_node($) {
-		my($node) = @_;
-		my $html = $node->as_HTML();
-		#print STDERR "HTML: ${html}\n";
-		push(@nodes, "${html}\n");
-	}
+    sub add_node($) {
+        my($node) = @_;
+        my $html = $node->as_HTML();
+        #print STDERR "HTML: ${html}\n";
+        push(@nodes, "${html}\n");
+    }
 
-	sub add_image_node($$) {
-		my($filename, $extra) = @_;
-		my $node = create_node();
-		$node->push_content(
-			HTML::Element->new('img',
-				src => $filename,
-				%{$extra}
-			)
-		);
-		add_node($node);
-	}
+    sub add_image_node($$) {
+        my($filename, $extra) = @_;
+        my $node = create_node();
+        $node->push_content(
+            HTML::Element->new('img',
+                src => $filename,
+                %{$extra}
+            )
+        );
+        add_node($node);
+    }
 
-	sub add_error_node($$) {
-		my($base, $msg) = @_;
-		my $node = create_node();
-		$node->push_content(
-			HTML::Element->new('p')
-				->push_content("${base}: ${msg}")
-		);
-		add_node($node);
-	}
+    sub add_error_node($$) {
+        my($base, $msg) = @_;
+        my $node = create_node();
+        $node->push_content(
+            HTML::Element->new('p')
+                ->push_content("${base}: ${msg}")
+        );
+        add_node($node);
+    }
 }
 
 ##############################################################################
@@ -219,57 +219,57 @@ sub convert_image($$)
 # get a single image for URL from image URL
 sub get_image($$$;$)
 {
-	my($url, $base, $imgurl, $extra) = @_;
+    my($url, $base, $imgurl, $extra) = @_;
 
-	#print STDERR "IMAGE URL: ${imgurl}\n";
-	if (my $content = get($imgurl)) {
-		if (my $basename = convert_image($base, $content)) {
-			add_image_node($basename, $extra);
-			print "comic fetched from '$url'\n";
-			return;
-		}
-	} else {
-		print STDERR "Couldn't get page '${imgurl}': $!\n";
-	}
+    #print STDERR "IMAGE URL: ${imgurl}\n";
+    if (my $content = get($imgurl)) {
+        if (my $basename = convert_image($base, $content)) {
+            add_image_node($basename, $extra);
+            print "comic fetched from '$url'\n";
+            return;
+        }
+    } else {
+        print STDERR "Couldn't get page '${imgurl}': $!\n";
+    }
 
-	add_error_node($base, "couldn't fetch image");
+    add_error_node($base, "couldn't fetch image");
 }
 
 # get a single comic for URL
 sub get_comic($$$$)
 {
-	my($url, $base, $timeout, $code) = @_;
+    my($url, $base, $timeout, $code) = @_;
 
-	#print STDERR "COMIC URL: ${url}\n";
-	my $content = get($url, $timeout);
-	unless ($content) {
-		print STDERR "Couldn't get page '${url}': $!\n";
-		add_error_node($base, "couldn't get page");
-		return;
-	}
+    #print STDERR "COMIC URL: ${url}\n";
+    my $content = get($url, $timeout);
+    unless ($content) {
+        print STDERR "Couldn't get page '${url}': $!\n";
+        add_error_node($base, "couldn't get page");
+        return;
+    }
 
-	my $tree = HTML::TreeBuilder->new();
-	# include HTML5 tags like <picture>
-	$tree->ignore_unknown(0);
-	$tree->parse($content);
-	$tree->eof();
-	unless (defined($tree)) {
-		print STDERR "Couldn't parse HTML from '${url}': $!\n";
-		add_error_node($base, "couldn't get HTML");
-		return;
-	}
-	# print STDERR "DUMP: "; $tree->dump(*STDERR);
+    my $tree = HTML::TreeBuilder->new();
+    # include HTML5 tags like <picture>
+    $tree->ignore_unknown(0);
+    $tree->parse($content);
+    $tree->eof();
+    unless (defined($tree)) {
+        print STDERR "Couldn't parse HTML from '${url}': $!\n";
+        add_error_node($base, "couldn't get HTML");
+        return;
+    }
+    # print STDERR "DUMP: "; $tree->dump(*STDERR);
 
-	# pass DOM tree to callback to extract image URL
-	if (my($imgurl, $extra) = $code->($tree)) {
-		get_image($url, $base, $imgurl, $extra);
-	} else {
-		print STDERR "Couldn't find image in '${url}'\n";
-		add_error_node($base, "couldn't find image");
-	}
+    # pass DOM tree to callback to extract image URL
+    if (my($imgurl, $extra) = $code->($tree)) {
+        get_image($url, $base, $imgurl, $extra);
+    } else {
+        print STDERR "Couldn't find image in '${url}'\n";
+        add_error_node($base, "couldn't find image");
+    }
 
-	# always release DOM tree after we're done!
-	$tree->delete();
+    # always release DOM tree after we're done!
+    $tree->delete();
 }
 
 ##############################################################################
@@ -278,14 +278,14 @@ sub get_comic($$$$)
 #
 ##############################################################################
 sub generate_ebook($) {
-	my($output) = @_;
-	my $index = File::Spec->catfile($tempdir, 'index.html');
+    my($output) = @_;
+    my $index = File::Spec->catfile($tempdir, 'index.html');
 
-	if (open(my $fh, '>', $index)) {
-		my @local   = localtime(time());
-		my $date    = strftime("%e-%b-%Y", @local);
-		my @nodes   = @{ get_nodes() };
-		my $content = <<"END_OF_HTML";
+    if (open(my $fh, '>', $index)) {
+        my @local   = localtime(time());
+        my $date    = strftime("%e-%b-%Y", @local);
+        my @nodes   = @{ get_nodes() };
+        my $content = <<"END_OF_HTML";
 <!DOCTYPE html>
 <head>
   <title>Comics ${date}</title>
@@ -296,26 +296,26 @@ sub generate_ebook($) {
 </body>
 END_OF_HTML
 
-		#print $content;
-		print $fh $content;
-		if (close($fh)) {
-			print "converting...\n";
-			if (system(
-				'ebook-convert', $index, $output,
-				'--authors=' . $config{ebook}->{author}
-			) == 0) {
-				return 1;
-			} else {
-				print STDERR "conversion failed: $!\n";
-			}
-		} else {
-			print STDERR "couldn't write index page: $!\n";
-		}
-	} else {
-		print STDERR "couldn't open index page: $!\n";
-	}
+        #print $content;
+        print $fh $content;
+        if (close($fh)) {
+            print "converting...\n";
+            if (system(
+                'ebook-convert', $index, $output,
+                '--authors=' . $config{ebook}->{author}
+            ) == 0) {
+                return 1;
+            } else {
+                print STDERR "conversion failed: $!\n";
+            }
+        } else {
+            print STDERR "couldn't write index page: $!\n";
+        }
+    } else {
+        print STDERR "couldn't open index page: $!\n";
+    }
 
-	return;
+    return;
 }
 
 ##############################################################################
@@ -324,52 +324,52 @@ END_OF_HTML
 #
 ##############################################################################
 sub send_mail($$) {
-	my($fullpath, $basename) = @_;
-	my $from = $config{mail}->{from};
-	my $to   = $config{mail}->{to};
+    my($fullpath, $basename) = @_;
+    my $from = $config{mail}->{from};
+    my $to   = $config{mail}->{to};
 
-	# generate MIME message
-	my $msg = MIME::Lite->new(
-		From    => $from,
-		To      => $to,
-		Subject => $config{mail}->{subject},
-		Type    => 'multipart/mixed',
-	);
-	$msg->attach(
-		Type	=> 'TEXT',
-		Data	=> $config{mail}->{greeting},
-	);
-	$msg->attach(
-		Type	    => $config{mail}->{type},,
-		Path	    => $fullpath,
-		Filename    => $basename,
-		Disposition => 'attachment',
-	);
+    # generate MIME message
+    my $msg = MIME::Lite->new(
+        From    => $from,
+        To      => $to,
+        Subject => $config{mail}->{subject},
+        Type    => 'multipart/mixed',
+    );
+    $msg->attach(
+        Type    => 'TEXT',
+        Data    => $config{mail}->{greeting},
+    );
+    $msg->attach(
+        Type        => $config{mail}->{type},,
+        Path        => $fullpath,
+        Filename    => $basename,
+        Disposition => 'attachment',
+    );
 
-	# SMTP client
-	my $smtp = Net::SMTP->new($config{mail}->{host},
-		Port     => $config{mail}->{port},
-		#Debug    => 1,
-		Timeout  => $config{mail}->{timeout},
-	);
-	if ($smtp) {
-		if ($smtp->starttls()  &&
-			# Requires Authen::SASL
-			$smtp->auth($from, $config{mail}->{password}) &&
-			$smtp->mail($from) &&
-			$smtp->to($to)     &&
-			$smtp->data()      &&
-			$smtp->datasend($msg->as_string()) &&
-			$smtp->dataend()   &&
-			$smtp->quit()
-		) {
-			print "mail sent\n";
-		} else {
-			print STDERR "can't send mail: " . $smtp->message() . "\n";
-		}
-	} else {
-		print STDERR "can't connect to SMTP server: $@\n";
-	}
+    # SMTP client
+    my $smtp = Net::SMTP->new($config{mail}->{host},
+        Port     => $config{mail}->{port},
+        #Debug    => 1,
+        Timeout  => $config{mail}->{timeout},
+    );
+    if ($smtp) {
+        if ($smtp->starttls()  &&
+            # Requires Authen::SASL
+            $smtp->auth($from, $config{mail}->{password}) &&
+            $smtp->mail($from) &&
+            $smtp->to($to)     &&
+            $smtp->data()      &&
+            $smtp->datasend($msg->as_string()) &&
+            $smtp->dataend()   &&
+            $smtp->quit()
+        ) {
+            print "mail sent\n";
+        } else {
+            print STDERR "can't send mail: " . $smtp->message() . "\n";
+        }
+    } else {
+        print STDERR "can't connect to SMTP server: $@\n";
+    }
 }
 
 ##############################################################################
@@ -379,27 +379,27 @@ sub send_mail($$) {
 ##############################################################################
 
 my %Options = (
-	mail => 1,
+    mail => 1,
 );
 
 GetOptions(\%Options,
-	"mail!",
+    "mail!",
 ) or fail("can't parse command line options");
 load_configuration();
 http_init();
 $tempdir = tempdir(CLEANUP => 1)
-	or fail("can't create temorary directory: $!");
+    or fail("can't create temorary directory: $!");
 print "Temporary directory '${tempdir}'\n";
 
 my $ebook = $config{ebook}->{filename};
 $ebook = File::Spec->catfile($tempdir, $ebook)
-	if $Options{mail};
+    if $Options{mail};
 
 # TODO: fetch comics....
 
 if (generate_ebook($ebook)) {
-	send_mail($ebook, $config{ebook}->{filename})
-		if $Options{mail};
+    send_mail($ebook, $config{ebook}->{filename})
+        if $Options{mail};
 }
 
 # That's all folks
