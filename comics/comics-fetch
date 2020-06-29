@@ -342,6 +342,21 @@ sub get_comic_simple($$$@) {
     );
 }
 
+# www.gocomics.com
+sub get_comic_gocomics($) {
+    my($base)     = @_;
+    my @yesterday = localtime(time() - 86400);
+    my $url       = strftime("https://www.gocomics.com/${base}/%Y/%m/%d",
+                             @yesterday);
+
+    get_comic_simple(
+        $url,
+        $base,
+        undef,
+        class => qr/item-comic-image/
+    );
+}
+
 ##############################################################################
 #
 # E-Book generation
