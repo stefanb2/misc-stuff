@@ -8,7 +8,10 @@ _sink="${_card/_card/_output}.${_output}"
 # make HDMI output visible to pulseaudio
 aplay -D${_device} </dev/null
 
-# tell pulsaudio to switch to correct profile and unsuspend the sink
+# tell pulseaudio to switch to correct profile and unsuspend the sink
 pacmd set-card-profile ${_card} off
 pacmd set-card-profile ${_card} output:${_output}
 pacmd suspend-sink     ${_sink} false
+
+# re-initialize pulseaudio, the nice way...
+pasuspender -- /bin/true
