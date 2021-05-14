@@ -1,0 +1,26 @@
+#!/usr/bin/perl -w
+use 5.032;
+use strict;
+use warnings;
+
+use Net::DBus;
+
+my $screensaver;
+eval {
+    my $bus      = Net::DBus->session;
+    my $service  = $bus->get_service('org.freedesktop.ScreenSaver');
+    $screensaver = $service->get_object('/ScreenSaver',
+                                        'org.freedesktop.ScreenSaver');
+};
+die "ERROR: can't find any active screensaver D-Bus instance.\n\n$@"
+    if $@;
+
+my $cookie = $screensaver->Inhibit($0, "blocking");
+print "Inhibit cookie: ${cookie}\n";
+
+# We need to keep the DBus connection active
+# for the inhibit to work, so sleep forever...
+sleep;
+
+# That's all folks,,,
+exit 0;
