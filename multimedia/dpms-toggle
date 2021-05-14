@@ -4,21 +4,37 @@
 # run embedded bash script in background and exit
 setsid &>/dev/null /bin/bash - <<'END_OF_SCRIPT' &
 _choice=0 # 0 - toggle, 1 - cancel
+_helper_pid=
 while [[ ${_choice} -eq 0 ]]; do
 
-    # toggle DPMS
-    if [[ "$(xset -q | grep 'DPMS is')" == *Enabled* ]]; then
+    # Wayland - use DBUS
+    if [[ -n "${WAYLAND_DISPLAY}" ]]; then
+
+	if [[ -z "${_helper_pid}" ]]; then
+		dbus-screensaver-inhibit </dev/null &
+		_helper_pid=$!
+		_msg="Screensaver disabled"
+	else
+		kill -HUP ${_helper_pid}
+		_helper_pid=
+		_msg="Screensaver enabled"
+	fi
+
+    # X11 - toggle DPMS
+    elif [[ "$(xset -q | grep 'DPMS is')" == *Enabled* ]]; then
 	xset -dpms
-	_msg="disabled"
+	_msg="DPMS disabled"
     else
 	xset +dpms
-	_msg="enabled"
+	_msg="DPMS enabled"
     fi
 
     # open dialog
-    kdialog --title "DPMS ${_msg}" --yes-label "Toggle" --no-label "Exit" --yesno "DPMS is ${_msg}"
+    kdialog --title "${_msg}" --yes-label "Toggle" --no-label "Exit" --yesno "${_msg}"
     _choice=$?
 done
+
+[[ -n "${_helper_pid}" ]] && kill -HUP ${_helper_pid}
 
 # That's all folks...
 exit 0
