@@ -1,0 +1,21 @@
+#!/bin/bash
+#set -x
+
+# run embedded bash script in background and exit
+setsid &>/dev/null /bin/bash - <<'END_OF_SCRIPT' &
+dbus-screensaver-inhibit </dev/null &
+_helper_pid=$!
+
+# open dialog
+kdialog --title "Screensaver inhibited" --ok-label "Stop" \
+        --msgbox "Screensaver is inhibited"
+
+# stop inhibitor helper
+kill -HUP ${_helper_pid}
+
+# That's all folks...
+exit 0
+END_OF_SCRIPT
+
+# That's all folks...
+exit 0
