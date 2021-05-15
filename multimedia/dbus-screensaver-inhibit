@@ -3,6 +3,7 @@ use 5.032;
 use strict;
 use warnings;
 
+use File::Basename;
 use Net::DBus;
 
 my $screensaver;
@@ -15,7 +16,8 @@ eval {
 die "ERROR: can't find any active screensaver D-Bus instance.\n\n$@"
     if $@;
 
-my $cookie = $screensaver->Inhibit($0, "blocking");
+my $cookie = $screensaver->Inhibit(basename($0),
+                                   "is blocking on user request");
 print "Inhibit cookie: ${cookie}\n";
 
 # We need to keep the DBus connection active
