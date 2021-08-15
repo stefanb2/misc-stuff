@@ -1,6 +1,14 @@
 import { configureStore, ThunkAction, Action } from '@reduxjs/toolkit';
+import {createLogger} from 'redux-logger';
+
+const logger = createLogger({
+  collapsed: true,
+});
 
 export const store = configureStore({
+  middleware: getDefaultMiddleware => getDefaultMiddleware().concat(
+    logger,
+  ),
   reducer: {
   },
 });
