@@ -1,6 +1,8 @@
 import { configureStore, ThunkAction, Action } from '@reduxjs/toolkit';
 import {createLogger} from 'redux-logger';
 
+import {programSlice} from '../slices/program';
+
 const logger = createLogger({
   collapsed: true,
 });
@@ -10,6 +12,7 @@ export const store = configureStore({
     logger,
   ),
   reducer: {
+    [programSlice.name]: programSlice.reducer,
   },
 });
 
