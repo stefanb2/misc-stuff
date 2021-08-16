@@ -1,0 +1,19 @@
+.error-container {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  justify-content: center;
+  align-items: center;
+  font-weight: 900;
+}
+
+.error-message {
+  font-size: 200%;
+  padding: 1em;
+  color: red;
+}
+
+.error-stacktrace {
+  align-self: flex-start;
+  color: orange;
+}
