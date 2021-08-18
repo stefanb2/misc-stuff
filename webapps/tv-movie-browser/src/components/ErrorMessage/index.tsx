@@ -15,7 +15,8 @@ export const ErrorMessage = ({error}: ErrorMessageProps) => (
         className="error-stacktrace"
         key={index}
       >
-        {line}
+        {/* &nbsp; preserves the leading spaces from the line */}
+        &nbsp;{line}
       </code>
     ))}
   </div>
