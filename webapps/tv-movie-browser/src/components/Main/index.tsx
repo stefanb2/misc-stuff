@@ -4,7 +4,7 @@ import {useParams} from 'react-router-dom';
 import {ErrorMessage} from '../ErrorMessage';
 
 import {useAppDispatch, useAppSelector } from '../../app/hooks';
-import {programSelector, FETCH_PROGRAM} from '../../slices/program';
+import {programSelector, FETCH_PROGRAM, FETCH_SELECTORS} from '../../slices/program';
 import {parseDate} from '../../utils/time';
 
 type RouteParams = {
@@ -16,6 +16,7 @@ type RouteParams = {
 export const Main = () => {
   const {date, providerId, selectorId} = useParams<RouteParams>()
   const [error, updateError] = useState<Error>()
+  const [initializing, updateInitializing] = useState<boolean>(true)
   const program = useAppSelector(programSelector)
   const dispatch = useAppDispatch()
 
@@ -23,6 +24,27 @@ export const Main = () => {
     () => {
       // useEffect() callbacks should always be synchronous
       (async () => {
+        // provider ID changed -> re-initialize
+        updateInitializing(true)
+
+        try {
+          await dispatch(FETCH_SELECTORS(providerId))
+          updateInitializing(false)
+        } catch (error) {
+          updateError(error)
+        }
+      })()
+    },
+    [dispatch, providerId]
+  )
+
+  useEffect(
+    () => {
+      // useEffect() callbacks should always be synchronous
+      (async () => {
+        // wait until initializing is done
+        if (initializing) return
+
         const day = parseDate(date)
 
         try {
@@ -32,7 +54,7 @@ export const Main = () => {
         }
       })()
     },
-    [date, dispatch, providerId, selectorId]
+    [date, dispatch, initializing, providerId, selectorId]
   )
 
   if (error)
