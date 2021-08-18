@@ -21,11 +21,7 @@ const initialState: ProgramState = {
   selectorId: '',
 }
 
-type ProviderProgramFetchResponse = {
-  channels: Channel[]
-  selectorId: string
-}
-type ProviderProgramFetchFn = (day: Day, selectorId?: string) => Promise<ProviderProgramFetchResponse>
+type ProviderProgramFetchFn = (day: Day, selectorId: string) => Promise<Channel[]>
 type ProviderSelectorsFetchFn = () => Promise<SelectorMap>
 type Provider = {
   name: string
@@ -38,31 +34,49 @@ const providers : { [key: string]:  Provider } = {
 }
 const defaultProviderId = Object.keys(providers)[0];
 
-export const FETCH_PROGRAM = createAsyncThunk(
+type FetchProgramResponse = {
+  channels: Channel[]
+  day: Day
+  providerId: string
+  selectorId: string
+}
+export const FETCH_PROGRAM = createAsyncThunk<
+  FetchProgramResponse,
+  {
+    day: Day,
+    providerId?: string,
+    selectorId?: string,
+  },
+  {state: RootState}
+>(
   'FETCH_PROGRAM',
   async (
     {
       day,
       providerId = defaultProviderId,
-      selectorId: selectorIdIn,
-    } : {
-      day: Day,
-      providerId?: string,
-      selectorId?: string,
-    }) => {
-      const provider = providers[providerId]
-      if (!provider)
-        throw new Error(`Unkown provider ID '${providerId}'`)
+      selectorId = '',
+    },
+    {getState}
+  ) => {
+    const provider = providers[providerId]
+    if (!provider)
+      throw new Error(`Unkown provider ID '${providerId}'`)
 
-      const {channels, selectorId} = await provider.program(day, selectorIdIn)
+    const {program: {selectors}} = getState()
+    const selector = selectorId ? selectors[selectorId] : Object.values(selectors)[0]
+    if (!selector)
+      throw new Error(`Unknown selector ID '${selectorId}'`)
 
-      return {
-        channels,
-        day,
-        providerId,
-        selectorId,
-      }
+    const {id, slug} = selector
+    const channels = await provider.program(day, id)
+
+    return {
+      channels,
+      day,
+      providerId,
+      selectorId: slug,
     }
+  }
 )
 
 export const FETCH_SELECTORS = createAsyncThunk(

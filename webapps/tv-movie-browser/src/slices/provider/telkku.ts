@@ -1,8 +1,5 @@
-const program = async (day: Day, selectorId?: string) => {
-  return {
-    channels: [] as Channel[],
-    selectorId: '',
-  }
+const program = async (day: Day, selectorId: string) => {
+  return []
 }
 
 const selectors = async () => {
