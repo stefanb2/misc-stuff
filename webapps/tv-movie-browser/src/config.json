@@ -1,0 +1,7 @@
+{
+  "providers": {
+    "telkku": {
+      "port": 8000
+    }
+  }
+}
