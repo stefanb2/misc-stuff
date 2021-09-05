@@ -103,21 +103,21 @@ export const programSlice = createSlice({
   },
   extraReducers: builder => {
     builder
-      .addCase(FETCH_PROGRAM.fulfilled, (state, {payload}) => ({
-        ...state,
-        ...payload,
-      }))
-      .addCase(FETCH_SELECTORS.fulfilled, (state, {payload}) => ({
-        ...state,
-        ...payload,
-      }))
-      // make request errors fatal
-      .addCase(FETCH_PROGRAM.rejected, (state, {error}) => {
-        throw error
-      })
-      .addCase(FETCH_SELECTORS.rejected, (state, {error}) => {
-        throw error
-      })
+      // merge payload from all fulfilled asynchronous actions to state
+      .addMatcher(
+        ({type}) => type.endsWith('/fulfilled'),
+        (state, {payload}) => ({
+          ...state,
+          ...payload,
+        })
+      )
+      // make all rejected asynchronous actions throw by default
+      .addMatcher(
+        ({type}) => type.endsWith('/rejected'),
+        (_, {error}) => {
+          throw error
+        }
+      )
   },
 })
 
