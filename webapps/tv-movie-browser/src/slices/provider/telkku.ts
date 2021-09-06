@@ -1,21 +1,9 @@
-import {get} from '../../utils/apiRequest'
-
-import {providers} from '../../config.json'
-
-const telkku: {
-  hostname?: string
-  port: number
-  protocol?: string
-} = providers.telkku
-const {
-  hostname = document.location.hostname,
-  port,
-  protocol = '',
-} = telkku
-
 // CORS proxy
-//const apiPath = 'https://www.telkku.com/api'
-const apiPath = `${protocol}//${hostname}:${port}/api`
+// CORS proxy
+//import {get} from '../../utils/apiRequest'
+import {get} from '../../utils/corsProxy'
+
+const apiPath = 'https://www.telkku.com/api'
 
 const program = async (day: Day, selectorId: string) => {
   return []

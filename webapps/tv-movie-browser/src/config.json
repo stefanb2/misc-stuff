@@ -1,7 +1,5 @@
 {
-  "providers": {
-    "telkku": {
-      "port": 8000
-    }
+  "corsProxy": {
+    "port": 8000
   }
 }
