@@ -6,46 +6,38 @@ const https = require('https');
 // Roll our own barebone command line argument processor
 const args = process.argv.slice(2);
 const options = {
-  protocol: 'https',
 };
 while (args.length > 0) {
   const option = args.shift();
 
   switch (option.toLowerCase()) {
-    case '--endpoint':
-      if (args.length < 1) throw new Error('--endpoint: mandatory argument missing');
-      options.endpoint = args.shift();
-      break;
-
     case '--listen':
       if (args.length < 1) throw new Error('--listen: mandatory argument missing');
       options.listen = parseInt(args.shift());
-      break;
-
-    case '--protocol':
-      if (args.length < 1) throw new Error('--protocol: mandatory argument missing');
-      options.protocol = args.shift();
       break;
 
     default:
       throw new Error(`Unknown option '${option}'`);
   }
 }
-if (!options.endpoint) throw new Error('Mandatory option --endpoint missing');
-if (!options.listen)   throw new Error('Mandatory option --listen missing');
+if (!options.listen) throw new Error('Mandatory option --listen missing');
 
 console.log('Proxy Options', options);
-const {endpoint, listen, protocol} = options;
-
-// proxy protocol module
-const protocolModule = protocol === 'http' ? http : https;
+const {listen} = options;
 
 // HTTP server
 const server = http.createServer((origReq, origRes) => {
-  const {headers, url} = origReq;
+  const {headers, method, url} = origReq;
 
   // disable CORS on response
   origRes.setHeader('Access-Control-Allow-Origin', '*');
+
+  // handle pre-flight requests
+  if (method === 'OPTIONS') {
+    origRes.setHeader('Access-Control-Allow-Headers', 'x-forward-to');
+    origRes.setHeader('Access-Control-Allow-Methods', 'GET');
+    return origRes.end();
+  }
 
   // error handling
   const abort = error => {
@@ -53,9 +45,27 @@ const server = http.createServer((origReq, origRes) => {
     origRes.statusCode = 500;
     origRes.end();
   };
+  const processFailure = message => {
+    console.error(message);
+    origRes.statusCode = 422;
+    origRes.write(message);
+    origRes.end();
+  };
+
+  // get forward URL
+  const proxyURL = headers['x-forward-to'];
+  if (!proxyURL)
+    return processFailure('mandatory X-Forward-To header missing');
+  let forwardURLObject;
+  try {
+    forwardURLObject = new URL(proxyURL);
+  } catch (error) {
+    console.error(error);
+    return processFailure('parsing of forward URL failed.');
+  }
 
   // forward request
-  const proxyURL = `${protocol}://${endpoint}${url}`;
+  const protocolModule = forwardURLObject.protocol === 'http' ? http : https;
   const proxyReq = protocolModule.get(
     proxyURL,
     {
