@@ -12,6 +12,7 @@ use open qw(:encoding(UTF-8) :std);
 #
 # from perl-TimeDate
 use Date::Format;
+use File::Basename qw(basename);
 use File::Spec;
 use File::Temp qw(tempdir);
 use Getopt::Long;
@@ -381,8 +382,7 @@ sub get_comic_kingfeatures($$$) {
 # E-Book generation
 #
 ##############################################################################
-sub generate_ebook($) {
-    my($output) = @_;
+sub generate_ebook() {
     my $index = File::Spec->catfile($tempdir, 'index.html');
 
     if (open(my $fh, '>', $index)) {
@@ -405,7 +405,7 @@ END_OF_HTML
         if (close($fh)) {
             print "converting...\n";
             if (system(
-                'ebook-convert', $index, $output,
+                'ebook-convert', $index, $config{ebook}->{filename},
                 '--authors=' . $config{ebook}->{author}
             ) == 0) {
                 return 1;
@@ -427,8 +427,8 @@ END_OF_HTML
 # Mail handling
 #
 ##############################################################################
-sub send_mail($$) {
-    my($fullpath, $basename) = @_;
+sub send_mail() {
+    my $file = $config{ebook}->{filename};
     my $from = $config{mail}->{from};
     my $to   = $config{mail}->{to};
 
@@ -445,8 +445,8 @@ sub send_mail($$) {
     );
     $msg->attach(
         Type        => $config{mail}->{type},,
-        Path        => $fullpath,
-        Filename    => $basename,
+        Path        => $file,
+        Filename    => basename($file),
         Disposition => 'attachment',
     );
 
@@ -496,15 +496,11 @@ $tempdir = tempdir(CLEANUP => 1)
     or fail("can't create temorary directory: $!");
 print "Temporary directory '${tempdir}'\n";
 
-my $ebook = $config{ebook}->{filename};
-$ebook = File::Spec->catfile($tempdir, $ebook)
-    if $Options{mail};
-
 fetch_comics();
 #print @{ get_nodes() };
 
-if (generate_ebook($ebook)) {
-    send_mail($ebook, $config{ebook}->{filename})
+if (generate_ebook()) {
+    send_mail()
         if $Options{mail};
 }
 
