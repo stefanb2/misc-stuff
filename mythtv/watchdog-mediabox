@@ -11,7 +11,7 @@ use IO::Select;
 use constant ETHERWAKE      => qw(/usr/sbin/etherwake -b -i green0 E0:D5:5E:83:E1:D3);
 use constant LOGFILE        => "/var/log/watchdog-mediabox.log";
 use constant LISTEN_PORT    => 9001;
-use constant MAX_TIMEOUT    => 1 * 60 * 60;
+use constant MAX_TIMEOUT    => 2 * 60 * 60; # 2 hours
 use constant WATCHDOG_GUARD => 60;
 # CONFIGURATION END
 
