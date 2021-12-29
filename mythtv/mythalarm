@@ -1,0 +1,5 @@
+#!/bin/sh
+_bindir=$(dirname $0)
+_script=$(basename $0)
+_logfile=${_bindir}/../${_script}.log
+sudo ${_bindir}/mythalarm.rtc_cmos >>${_logfile} 2>&1 "$@"

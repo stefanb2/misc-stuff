@@ -1,0 +1,143 @@
+#!/usr/bin/perl -w
+use 5.030;
+use strict;
+use warnings;
+use open qw(:encoding(UTF-8) :std);
+
+use Date::Format;
+use Date::Parse;
+use File::Basename qw(basename);
+use File::Spec;
+use FindBin qw($Bin);
+use IO::Socket::INET;
+use Sys::Syslog;
+
+# Define prime time
+# disabled for now
+#use constant PRIME_START => 19;
+#use constant PRIME_END   => 23;
+use constant PRIME_START         => 21;
+use constant PRIME_END           => 20;
+use constant SECONDS_PER_MINUTE  => 60;
+use constant SECONDS_PER_HOUR    => 60 * SECONDS_PER_MINUTE;
+use constant SECONDS_PER_DAY     => 24 * SECONDS_PER_HOUR;
+use constant EPG_UPDATE_START    => '05:00';
+use constant EPG_UPDATE_INTERVAL =>  2 * SECONDS_PER_HOUR;
+use constant EPG_UPDATE_MARGIN   =>  5 * SECONDS_PER_MINUTE;
+use constant WATCHDOG            => '192.168.2.1:9001';
+use constant FILE_RTC_WAKEALARM  => '/sys/class/rtc/rtc0/wakealarm';
+use constant FILE_DONTSHUTDOWN   => File::Spec->catfile($Bin, '..', 'dontshutdown');
+use constant FILE_LASTALARM      => File::Spec->catfile($Bin, '..', 'mythlastalarm');
+
+my($progname) = basename($0);
+
+# Set RTC CMOS alarm
+sub SetRTCCMOSAlarm($)
+{
+  my($time) = @_;
+
+  # Try to log wakeup event (may fail...)
+  eval {
+    openlog('wakeup', 'ndelay', 'local1');
+    syslog('info', time2str('at %d-%b-%Y %H:%M', $time));
+    closelog();
+  };
+
+  print "$progname: RTC CMOS alarm write: $time\n";
+  print "$progname: RTC CMOS alarm write: ", scalar(localtime($time)), "\n";
+  open(my $fh, '>', FILE_RTC_WAKEALARM)
+    or die "$progname: can't open RTC CMOS alarm interface: $!\n";
+  print $fh "0\n";
+  close($fh)
+    or die "$progname: can't write to RTC CMOS alarm interface: $!\n";
+  open($fh, '>', FILE_RTC_WAKEALARM)
+    or die "$progname: can't open RTC CMOS alarm interface: $!\n";
+  print $fh "$time\n";
+  close($fh)
+    or die "$progname: can't write to RTC CMOS alarm interface: $!\n";
+  open($fh, '<', FILE_RTC_WAKEALARM)
+    or die "$progname: can't open RTC CMOS alarm interface: $!\n";
+  chomp($time = <$fh>);
+  close($fh)
+    or die "$progname: can't read from RTC CMOS alarm interface: $!\n";
+
+  # Reset watchdog
+  if (my $wh = IO::Socket::INET->new(PeerAddr => WATCHDOG,
+                                     Proto    => 'tcp')) {
+    print $wh "$time\n";
+    close($wh);
+    print "$progname: watchdog updated!\n";
+  }
+
+  print "$progname: RTC CMOS alarm read:  $time\n";
+}
+
+# Restart idling by default
+my $rc = 1;
+
+# Logging
+print "$progname: startup ", scalar(localtime()), "\n";
+print "$progname: parameters '", join("' '", @ARGV), "'\n";
+
+# Shutdown check?
+unless (@ARGV) {
+  my $curhour = (localtime())[2];
+  if (($curhour >= PRIME_START) && ($curhour <= PRIME_END)) {
+    print "$progname: we're currently in prime time.\n";
+  } elsif ((-e FILE_DONTSHUTDOWN)) {
+    print "$progname: shutdown currently blocked!\n";
+  } else {
+    # Tell mythbackend that it's OK to shutdown now
+    print "$progname: OK to shutdown now...\n";
+    $rc = 0;
+
+    # It seems that MythTV sometimes forget to set the alarm...
+    if (open(my $fh, '<', FILE_LASTALARM)) {
+      my $time = <$fh>;
+      close($fh);
+      unlink(FILE_LASTALARM);
+      chomp($time);
+      if ($time > time()) {
+        print "$progname: reusing last alarm just to be on the safe side...\n";
+        SetRTCCMOSAlarm($time);
+      }
+    }
+  }
+
+} elsif (@ARGV > 1) {
+
+  # Shutdown time given. Parse time
+  my $time = str2time("$ARGV[0] $ARGV[1]")
+    or die "$progname: invalid time specification: $ARGV[0] $ARGV[1]!\n";
+
+  # Save alarm time
+  if (open(my $fh, '>', FILE_LASTALARM)) {
+    print $fh "$time\n";
+    close($fh);
+  }
+
+  # Get current day at EPG update start time
+  my $curtime             = time();
+  my($day, $month, $year) = (localtime($curtime))[3, 4, 5];
+  my $nighttime           = sprintf('%04d-%02d-%02d ' . EPG_UPDATE_START,
+                                    $year + 1900, $month + 1, $day);
+  print "$progname: todays EPG time is $nighttime\n";
+
+  # Are we past EPG time already? Switch to next night...
+  $nighttime  = str2time($nighttime);
+  $nighttime += SECONDS_PER_DAY       if ($nighttime <= $curtime);
+
+  # Is wakeup time past the next EPG update interval?
+  if ($time >= ($nighttime + EPG_UPDATE_INTERVAL)) {
+    print "$progname: wakeup time is past next EPG update. Rescheduling...\n";
+    # Use a random time during the EPG_UPDATE_INTERVAL. We also need to
+    # consider the startup time of the machine...
+    $time = $nighttime + int(rand(EPG_UPDATE_INTERVAL - EPG_UPDATE_MARGIN));
+  }
+
+  SetRTCCMOSAlarm($time);
+  $rc = 0;
+}
+
+# We're done. Return code tells mythbackend how to continue
+exit $rc;
