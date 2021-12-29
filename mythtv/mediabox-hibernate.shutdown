@@ -1,0 +1,13 @@
+#!/bin/sh
+# Log shutdown event
+logger -p local1.info -t shutdown going down...
+
+# small pause for log to be sent to loghost
+sleep 1
+
+# Just shutdown for now...
+echo "Initiating shutdown..."
+shutdown -h now
+
+# We're done
+exit 0

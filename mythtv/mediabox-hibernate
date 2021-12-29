@@ -1,0 +1,4 @@
+#!/bin/sh
+_bindir=$(dirname $0)
+_script=$(basename $0)
+sudo ${_bindir}/mediabox-hibernate.shutdown "$@"
