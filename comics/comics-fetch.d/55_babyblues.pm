@@ -4,7 +4,7 @@ use strict;
 use warnings;
 
 sub get() {
-    ::get_comic_kingfeatures('babyblues', 'BabyBlues', 'Baby_Blues');
+    ::get_comic_gocomics('babyblues');
 }
 
 1;
