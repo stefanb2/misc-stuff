@@ -6,13 +6,14 @@ use warnings;
 use IO::Handle;
 use IO::Socket::INET;
 use IO::Select;
+use POSIX qw(mktime);
 
 # CONFIGURATION START
-use constant ETHERWAKE      => qw(/usr/sbin/etherwake -b -i green0 E0:D5:5E:83:E1:D3);
-use constant LOGFILE        => "/var/log/watchdog-mediabox.log";
-use constant LISTEN_PORT    => 9001;
-use constant MAX_TIMEOUT    => 2 * 60 * 60; # 2 hours
-use constant WATCHDOG_GUARD => 60;
+use constant ETHERWAKE           => qw(/usr/sbin/etherwake -b -i green0 E0:D5:5E:83:E1:D3);
+use constant LOGFILE             => "/var/log/watchdog-mediabox.log";
+use constant LISTEN_PORT         => 9001;
+use constant DEFAULT_WAKEUP_HOUR => 5;
+use constant WATCHDOG_GUARD      => 60;
 # CONFIGURATION END
 
 # Logging
@@ -20,6 +21,29 @@ open(STDOUT, ">>", LOGFILE) or die "STDOUT: $!\n";
 open(STDERR, ">&STDOUT") or die "STDERR: $!\n";
 STDOUT->autoflush(1);
 STDERR->autoflush(1);
+
+# Calculate next default wakeup time
+sub get_default_timeout() {
+  my $now = time();
+  my (undef, undef, undef, $mday, $mon, $year) = localtime($now);
+
+  # Default wakeup time for today
+  my $wakeup = mktime(0, 0, DEFAULT_WAKEUP_HOUR, $mday, $mon, $year);
+
+  #print $now, " ", scalar(localtime($now)), "\n";
+  #print $wakeup, " ", scalar(localtime($wakeup)), "\n";
+
+  # Past todays' default wakeup time?
+  if ($now + WATCHDOG_GUARD >= $wakeup) {
+    # Yes, wake up 24 hours later
+    $wakeup += 24 * 60 * 60;
+  }
+
+  #print $wakeup, " ", scalar(localtime($wakeup)), "\n";
+  #print "Wakeup in ", $wakeup - $now, " seconds\n";
+
+  return $wakeup - $now;
+}
 
 # Create listen socket
 my $socket = IO::Socket::INET->new(
@@ -70,7 +94,7 @@ while ($running) {
       print "Next wakeup at ", scalar(localtime($time)), "\n";
       if ($timeout <= WATCHDOG_GUARD) {
 	print "Invalid wakeup time, using fallback timout!\n";
-	$timeout = MAX_TIMEOUT;
+	$timeout = get_default_timeout();
       }
     }
 
@@ -83,7 +107,7 @@ while ($running) {
       unless (system(ETHERWAKE) == 0);
 
     # Reset timeout (should be overwritten by mediabox at next hibernate)
-    $timeout = MAX_TIMEOUT;
+    $timeout = get_default_timeout();
   }
 }
 
