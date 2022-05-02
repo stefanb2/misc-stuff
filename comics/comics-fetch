@@ -397,6 +397,7 @@ sub generate_ebook() {
 </head>
 <body>
  @nodes
+ <h1>dummy last page</h1>
 </body>
 END_OF_HTML
 
