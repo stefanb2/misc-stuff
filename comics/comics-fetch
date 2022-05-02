@@ -406,7 +406,8 @@ END_OF_HTML
             print "converting...\n";
             if (system(
                 'ebook-convert', $index, $config{ebook}->{filename},
-                '--authors=' . $config{ebook}->{author}
+                '--authors=' . $config{ebook}->{author},
+		'--output-profile=' . $config{ebook}->{profile}
             ) == 0) {
                 return 1;
             } else {
