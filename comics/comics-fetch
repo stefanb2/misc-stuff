@@ -176,14 +176,18 @@ sub convert_image($$) {
                 close($fh);
 
                 if (my($x, $y) = ($line =~ /\s(\d+)x(\d+)\s/)) {
-                    # auto-rotation detect
-                    my @rotate = ($x > $y) ? (-rotate => $config{image}->{rotate}) : ();
                     my $basename = "${base}." . $config{image}->{type};
+                    my @options = $config{image}->{options} ? split(' ', $config{image}->{options}) : ();
+                    # auto-rotation detect
+                    push(@options, -rotate => $config{image}->{rotate})
+                            if ($x > $y);
+                    push(@options, -scale => $config{image}->{scale});
+                    #print STDERR "convert: @{options} ${basename}\n";
 
                     if (system(
-                        'convert', $tempfile,
-                        @rotate,
-                        '-scale', $config{image}->{scale},
+                        'convert',
+                        $tempfile,
+                        @options,
                         File::Spec->catfile($tempdir, $basename)
                     ) == 0) {
                         return $basename;
@@ -408,7 +412,7 @@ END_OF_HTML
             if (system(
                 'ebook-convert', $index, $config{ebook}->{filename},
                 '--authors=' . $config{ebook}->{author},
-		'--output-profile=' . $config{ebook}->{profile}
+                '--output-profile=' . $config{ebook}->{profile}
             ) == 0) {
                 return 1;
             } else {
