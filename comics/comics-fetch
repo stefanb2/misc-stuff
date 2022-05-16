@@ -230,7 +230,8 @@ sub convert_image($$) {
         my($node) = @_;
         my $html = $node->as_HTML();
         #print STDERR "HTML: ${html}\n";
-        push(@nodes, "${html}\n");
+        # add empty H1 as page break
+        push(@nodes, "${html}\n<h1/>\n");
     }
 
     sub add_image_node($$) {
@@ -401,7 +402,7 @@ sub generate_ebook() {
 </head>
 <body>
  @nodes
- <h1>dummy last page</h1>
+ End of document
 </body>
 END_OF_HTML
 
