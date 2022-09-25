@@ -1,0 +1,219 @@
+#!/usr/bin/perl -w
+use v5.34;
+use warnings;
+use strict;
+use autodie;
+use open qw(:encoding(UTF-8) :std);
+
+use Encode::Locale qw();
+use Encode qw();
+
+#use Data::Dumper;
+use File::Find qw(find);
+use File::Spec;
+
+##############################################################################
+#
+# A valid album directory after unpacking ZIP file from download:
+#
+#   "<index> - <artist> - <album title>" /
+#   normal:       "<artist> - <album title> - <track #> <track title>.flac"
+#   compilation:  "<artist> - <album title> - <track #> <track artist> - <track title>.flac"
+#                 cover.jpg
+#
+#   <index> is a number:
+#      - either counting releases by artist
+#      - YYYYMMDD album release date
+#
+##############################################################################
+
+##############################################################################
+#
+# Generate conversion script
+#
+##############################################################################
+sub generate_conversion_script($) {
+    my($album) = @_;
+    my $artist  = $album->{artist};
+    my $dirname = $album->{dirname};
+    my $title   = $album->{title};
+    my $track   = $album->{tracks};
+    my $tracks  = @{$track};
+    my $script  = File::Spec->catfile($dirname, 'convert.sh');
+    #print Dumper($album);
+
+    print "GENERATING: ${artist} - ${title} (${tracks} track(s))\n";
+
+    open(my $ofh, '>', $script);
+
+    # script header
+    print $ofh <<END_OF_SCRIPT_HEADER;
+#!/bin/bash
+if [[ -z "\$1" ]]; then
+    echo 1>&2 "usage: \$0 <destination directory>"
+    exit 1
+fi
+set -x
+_album="${title}"
+_date="TBA"
+_genre="TBA"
+_srcdir="\$(dirname \"\$0\")"
+_destdir="\$1/$album->{newname}"
+
+# common encoder parameters
+_bitrate=320
+_encoder_args=(
+    --bitrate \${_bitrate}
+    --discard-comments
+    --album  "\${_album}"
+    --date   "\${_date}"
+    --genre  "\${_genre}"
+)
+
+# create destination & copy cover.jpg
+set -e
+mkdir -p "\${_destdir}"
+cp --preserve=timestamps "\${_srcdir}/cover.jpg" "\${_destdir}"
+
+# convert files to ogg
+END_OF_SCRIPT_HEADER
+
+    # generate track conversion commands
+    foreach my $track (@{ $track }) {
+        print $ofh qq{oggenc "\${_encoder_args[@]}" --tracknum $track->{index} --artist "$track->{artist}" --title "$track->{title}" --output "\${_destdir}/$track->{newname}" "\${_srcdir}/$track->{decoded}"\n}
+            if $track; # skip indices without track
+    }
+
+    # script footer
+    print $ofh <<END_OF_SCRIPT_FOOTER;
+
+# add ReplayGain tags
+vorbisgain --album --fast --skip --recursive "\${_destdir}"
+
+# That's all folks
+set +ex
+echo Conversion to Ogg format finished.
+exit 0
+END_OF_SCRIPT_FOOTER
+
+    close($ofh);
+    chmod(0755, $script);
+}
+
+##############################################################################
+#
+# Collect track & cover for album
+#
+##############################################################################
+sub analyze_album($) {
+    my($album)  = @_;
+    #print Dumper($album);
+    my $artist     = $album->{artist};
+    my $dirdecoded = $album->{decoded};
+    my $dirname    = $album->{dirname};
+    my $track      = $album->{tracks};
+    # @TODO: support other than FLAC?
+    my $matcher    = qr/^\Q${artist}\E - \Q$album->{title}\E - (\d{2}) (.+)\.flac$/;
+    my $cover;
+
+    opendir(my $dfh, $dirname)
+        or die "can't open directory '${dirdecoded}': $!";
+
+    while (my $direntry = readdir($dfh)) {
+        my $file = File::Spec->catfile($dirname, $direntry);
+        next unless -f $file;
+        $cover++, next if $direntry =~ /^cover.jpg$/;
+
+        my($index, $title);
+        my $decoded = Encode::decode(locale_fs => $direntry);
+        next unless ($index, $title) = $decoded =~ $matcher;
+        next unless $index > 0;
+        print "TRACK DETECTED: ${dirdecoded} / ${decoded}\n";
+
+        my $newname;
+        # generate Ogg file name from lowercase index & title
+        # replace some criticial character sequences with underscore
+        ($newname = lc("${index}_${title}.ogg")) =~ s/[\s,]+/_/g;
+        # remove other criticial characters
+        $newname =~ tr/()[]{}&'-//d;
+        # replace underscore sequences with a single underscore
+        $newname =~ s/_+/_/g;
+
+        # in case of compilation: split title into track artist and track title
+        my($track_artist, $track_title) = $title =~ /^([^-]+)\s+-\s+(.+)$/;
+
+        $track->[$index - 1] = {
+            file    => $_,
+            artist  => $track_artist // $artist,
+            decoded => $decoded,
+            index   => int($index),
+            newname => $newname,
+            title   => $track_title // $title,
+        };
+    }
+    closedir($dfh)
+        or die "can't close directory '${dirdecoded}': $!";
+
+	if ($cover && @{ $track }) {
+        generate_conversion_script($album);
+        return;
+    }
+
+    print STDERR "IGNORING: broken album '${dirname}': no cover found!\n"
+        unless $cover;
+    print STDERR "IGNORING: broken album '${dirname}': no tracks found!\n"
+        unless @{ $track };
+}
+
+##############################################################################
+#
+# Check if directory is a valid album directory
+#
+##############################################################################
+sub check_directory($$$$$) {
+    my($dir, $decoded, $index, $artist, $title) = @_;
+
+    #print "${artist} ${index}/${title}\n";
+
+    my $newname;
+    ($newname = lc("${index}_${title}")) =~ s/\s+/_/g;
+    $newname =~ tr/-//d;
+
+    analyze_album({
+	    artist  => $artist,
+	    decoded => $decoded,
+	    dirname => $dir,
+	    index   => $index,
+	    newname => $newname,
+	    title   => $title,
+	    tracks  => [],
+    });
+}
+
+##############################################################################
+#
+# Recurse into directories or current directory
+#
+##############################################################################
+push(@ARGV, '.') unless @ARGV > 0;
+find(
+    {
+        no_chdir => 1,
+        wanted => sub {
+            return unless -d $_; # skip anything but directories
+
+            my $decoded = Encode::decode(locale_fs => $_);
+            if (my ($index, $artist, $title) =
+                    ($decoded =~ m,/(\d+)\s+-\s+(.+)\s+-\s+(.+)\s*$,)) {
+                        check_directory($_, $decoded, $index, $artist, $title);
+                        return;
+            }
+
+            print STDERR "IGNORING: ${decoded}\n";
+        },
+    },
+    @ARGV
+);
+
+# That's all folks...
+exit 0;
