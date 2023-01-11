@@ -2,7 +2,7 @@
 #set -x
 _device="hdmi-playback"
 _card="alsa_card.pci-0000_01_00.1"
-_output="hdmi-stereo-extra2"
+_output="hdmi-stereo"
 _sink="${_card/_card/_output}.${_output}"
 
 # make HDMI output visible to pulseaudio
