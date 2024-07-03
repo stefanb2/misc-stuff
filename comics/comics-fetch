@@ -7,7 +7,7 @@ use open qw(:encoding(UTF-8) :std);
 #
 # External programs called from this scriot
 #
-#    convert       (ImageMagick)
+#    magick        (ImageMagick v7)
 #    ebook-convert (calibre)
 #
 # from perl-TimeDate
@@ -171,7 +171,7 @@ sub convert_image($$) {
 
         if (close($fh)) {
             # extract image information
-            if (open($fh, '-|', 'convert', $tempfile, qw{-identify /dev/null})) {
+            if (open($fh, '-|', 'magick', $tempfile, qw{-identify /dev/null})) {
                 my $line = <$fh>;
                 close($fh);
 
@@ -182,10 +182,10 @@ sub convert_image($$) {
                     push(@options, -rotate => $config{image}->{rotate})
                             if ($x > $y);
                     push(@options, -scale => $config{image}->{scale});
-                    #print STDERR "convert: @{options} ${basename}\n";
+                    #print STDERR "magick: @{options} ${basename}\n";
 
                     if (system(
-                        'convert',
+                        'magick',
                         $tempfile,
                         @options,
                         File::Spec->catfile($tempdir, $basename)
