@@ -10,7 +10,7 @@ sub get() {
     # For now change the fetcher to a no-op.
     return;
 
-    my @yesterday = localtime(time() - 86400);
+    my @yesterday = localtime(get_time() - 86400);
     my $url       = strftime('https://dilbert.com/%Y-%m-%d',
                              @yesterday);
     ::get_comic_simple(

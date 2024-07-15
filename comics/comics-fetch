@@ -24,6 +24,8 @@ use MIME::Base64;
 use MIME::Lite;
 # requires also Authen::SASL
 use Net::SMTP;
+# don't override localtime()
+use Time::Piece qw();
 
 ##############################################################################
 #
@@ -72,6 +74,30 @@ sub load_configuration() {
     #        say "${section} ${key} '${value}'";
     #    }
     #}
+}
+
+##############################################################################
+#
+# Time base
+#
+##############################################################################
+{
+    # by default use script start time
+    my $time = time();
+
+    sub get_time() {
+	return $time;
+    }
+
+    sub set_time($) {
+	my($date) = @_;
+	return unless $date;
+
+	# interpret ISO-8601 YYYY-MM-DD as local time
+	my $t = Time::Piece::localtime->strptime($date, "%Y-%m-%d");
+
+	$time = $t->epoch();
+    }
 }
 
 ##############################################################################
@@ -351,7 +377,7 @@ sub get_comic_simple($$$@) {
 # www.gocomics.com
 sub get_comic_gocomics($) {
     my($base)     = @_;
-    my @yesterday = localtime(time() - 86400);
+    my @yesterday = localtime(get_time() - 86400);
     my $url       = strftime("https://www.gocomics.com/${base}/%Y/%m/%d",
                              @yesterday);
 
@@ -366,7 +392,7 @@ sub get_comic_gocomics($) {
 # King Features
 sub get_comic_kingfeatures($$$) {
     my($base, $prefix, $subpath) = @_;
-    my @today = localtime(time());
+    my @today = localtime(get_time());
 
     # Extracted from JS code - yep, security by obscurity...
     my $file = strftime(
@@ -391,7 +417,7 @@ sub generate_ebook() {
     my $index = File::Spec->catfile($tempdir, 'index.html');
 
     if (open(my $fh, '>', $index)) {
-        my @local   = localtime(time());
+        my @local   = localtime(get_time());
         my $date    = strftime("%e-%b-%Y", @local);
         my @nodes   = @{ get_nodes() };
         my $content = <<"END_OF_HTML";
@@ -490,12 +516,15 @@ sub send_mail() {
 ##############################################################################
 
 my %Options = (
+    date => undef,
     mail => 1,
 );
 
 GetOptions(\%Options,
+    "date:s",
     "mail!",
 ) or fail("can't parse command line options");
+set_time($Options{date});
 load_configuration();
 load_comics();
 http_init();
