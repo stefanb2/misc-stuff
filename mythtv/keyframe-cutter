@@ -256,12 +256,19 @@ sub recording_merge($$$$$$) {
     close($ofh)
 	or abort($dbh, $id, ERROR_IO, "write to file list '${filelist}' failed: $!");
 
-    # merge chunks to new output file
     my $outfile = File::Spec->catfile($dir, "NEW_${basename}");
-    run_command($dbh, $id, [
-	qw(ffmpeg -y -threads 0 -loglevel fatal -nostats -hide_banner -f concat -safe 0 -i), $filelist,
-	qw(-map 0 -c copy), $outfile
-    ]);
+    if ($cuts > 1) {
+        # merge chunks to new output file
+        run_command($dbh, $id, [
+            qw(ffmpeg -y -threads 0 -loglevel fatal -nostats -hide_banner -f concat -safe 0 -i), $filelist,
+            qw(-map 0 -c copy), $outfile
+        ]);
+    } else {
+        # just copy the single chunk to new output file
+        run_command($dbh, $id, [
+            "cp", $files->[0], $outfile
+        ]);
+    }
 
     # remove temporary files
     progress($dbh, $id, "cleaning up temporary files");
