@@ -86,17 +86,17 @@ sub load_configuration() {
     my $time = time();
 
     sub get_time() {
-	return $time;
+        return $time;
     }
 
     sub set_time($) {
-	my($date) = @_;
-	return unless $date;
+        my($date) = @_;
+        return unless $date;
 
-	# interpret ISO-8601 YYYY-MM-DD as local time
-	my $t = Time::Piece::localtime->strptime($date, "%Y-%m-%d");
+        # interpret ISO-8601 YYYY-MM-DD as local time
+        my $t = Time::Piece::localtime->strptime($date, "%Y-%m-%d");
 
-	$time = $t->epoch();
+        $time = $t->epoch();
     }
 }
 
@@ -187,6 +187,43 @@ sub load_configuration() {
 # Image conversion
 #
 ##############################################################################
+sub convert_image_file($$) {
+    my($base, $tempfile) = @_;
+
+    # extract image information
+    if (open(my $fh, '-|', 'magick', $tempfile, qw{-identify /dev/null})) {
+        my $line = <$fh>;
+        close($fh);
+
+        if (my($x, $y) = ($line =~ /\s(\d+)x(\d+)\s/)) {
+            my $basename = "${base}." . $config{image}->{type};
+            my @options = $config{image}->{options} ? split(' ', $config{image}->{options}) : ();
+            # auto-rotation detect
+            push(@options, -rotate => $config{image}->{rotate})
+                if ($x > $y);
+            push(@options, -scale => $config{image}->{scale});
+            #print STDERR "magick: @{options} ${basename}\n";
+
+            if (system(
+                    'magick',
+                    $tempfile,
+                    @options,
+                    File::Spec->catfile($tempdir, $basename)
+                ) == 0) {
+                return $basename;
+            } else {
+                print STDERR "Picture conversion failed: $!\n";
+            }
+        } else {
+            print STDERR "Couldn't extract image dimensions: ${line}";
+        }
+    } else {
+        print STDERR "Couldn't start image identifier: $!\n";
+    }
+
+    return;
+}
+
 sub convert_image($$) {
     my($base, $content) = @_;
     my $tempfile = "${tempdir}/temp.img";
@@ -196,36 +233,7 @@ sub convert_image($$) {
         print $fh $content;
 
         if (close($fh)) {
-            # extract image information
-            if (open($fh, '-|', 'magick', $tempfile, qw{-identify /dev/null})) {
-                my $line = <$fh>;
-                close($fh);
-
-                if (my($x, $y) = ($line =~ /\s(\d+)x(\d+)\s/)) {
-                    my $basename = "${base}." . $config{image}->{type};
-                    my @options = $config{image}->{options} ? split(' ', $config{image}->{options}) : ();
-                    # auto-rotation detect
-                    push(@options, -rotate => $config{image}->{rotate})
-                            if ($x > $y);
-                    push(@options, -scale => $config{image}->{scale});
-                    #print STDERR "magick: @{options} ${basename}\n";
-
-                    if (system(
-                        'magick',
-                        $tempfile,
-                        @options,
-                        File::Spec->catfile($tempdir, $basename)
-                    ) == 0) {
-                        return $basename;
-                    } else {
-                        print STDERR "Picture conversion failed: $!\n";
-                    }
-                } else {
-                    print STDERR "Couldn't extract image dimensions: ${line}";
-                }
-            } else {
-                print STDERR "Couldn't start image identifier: $!\n";
-            }
+            return convert_image_file($base, $tempfile);
         } else {
             print STDERR "Couldn't save image to file: $!\n";
         }
