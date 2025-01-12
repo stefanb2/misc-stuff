@@ -26,6 +26,7 @@ use MIME::Lite;
 use Net::SMTP;
 # don't override localtime()
 use Time::Piece qw();
+use URI::URL;
 
 ##############################################################################
 #
@@ -398,22 +399,184 @@ sub get_comic_gocomics($) {
 }
 
 # King Features
-sub get_comic_kingfeatures($$$) {
-    my($base, $prefix, $subpath) = @_;
-    my @today = localtime(get_time());
+{
+    sub _kingfeatures_parse($) {
+        my($tree) = @_;
 
-    # Extracted from JS code - yep, security by obscurity...
-    my $file = strftime(
-        sprintf("%s/%%Y/%%m/%s%s.%%Y%%m%%d_900.gif",
-                $prefix, $subpath,
-                # File template is different on weekdays / sunday (6 == wday)
-                $today[6] == 0 ? "_ntb" : ""
-        ), @today);
+        # find first comic reader on page
+        my($reader) = $tree->look_down(
+            _tag  => 'div',
+            class => qr/comic-reader-item/,
+        );
+        unless (defined($reader)) {
+            print STDERR "couldn't find reader\n";
+            return;
+        }
 
-    print "$file\n";
-    my $url  = 'https://safr.kingfeatures.com/api/img.php?e=gif&s=c&file='
-        . encode_base64($file, '');
-    get_image($url, $base, $url);
+        # find panels in reader
+        my @panels = $reader->look_down(
+            _tag  => 'div',
+            class => qr/ck-panel/,
+        );
+        unless (@panels) {
+            print STDERR "couldn't find panels\n";
+            return;
+        }
+
+        # extract images from panels
+        my @images;
+        my $max_height = 0;
+        foreach my $panel (@panels) {
+            my $style = $panel->attr('style');
+            my $img   = $panel->look_down(_tag => 'img');
+            unless (defined($style) && defined($img)) {
+                print STDERR "couldn't find image in panel\n";
+                return;
+            }
+
+            # image size and base URL
+            my($width, $height) = $style =~ m,aspect-ratio:\s*(\d+)\s*/\s*(\d+),;
+            my $src             = $img->attr('src');
+            unless (defined($width) && defined($height) && defined($src)) {
+                print STDERR "invalid image in panel\n";
+                return;
+            }
+
+            my $url = URI::URL->new($src);
+            unless (defined($url)) {
+                print STDERR "invalid base URL in panel\n";
+                return;
+            }
+
+            my %query = $url->query_form();
+            unless (%query && defined($query{url})) {
+                print STDERR "unexpected base URL in panel\n";
+                return;
+            }
+
+            # extract image URL from query
+            $url = URI::URL->new($query{url});
+            unless (defined($url)) {
+                print STDERR "invalid image URL in panel\n";
+                return;
+            }
+
+            # valid image found -> append information to list
+            #print "aspect: ${width} x ${height} -> ${url}\n";
+            $width  = int($width);
+            $height = int($height);
+            push(@images, {
+                height => $height,
+                url    => $url,
+                width  => $width,
+            });
+
+            # heighest image determines height of merged image
+            if ($height > $max_height) {
+                $max_height = $height;
+            }
+        }
+
+        return \@images, $max_height;
+    }
+
+    sub _kingfeatures_fetch_and_merge($$$) {
+        my($base, $images, $max_height) = @_;
+        my @cmd                         = qw(magick);
+
+        while (my($index, $image) = each @{$images}) {
+            my($height, $url, $width) = @{$image}{qw(height url width)};
+            my $content = get($url);
+            unless (defined($content)) {
+                print STDERR "couldn't fetch image from ${url}\n";
+                return;
+            }
+
+            # dump URL content as binary data to temporary file for merging
+            my $tempfile = "${tempdir}/${base}_${index}.jpg";
+            if (open(my $fh, '>:raw', $tempfile)) {
+                print $fh $content;
+
+                if (close($fh)) {
+                    # add image to sequence
+                    push(@cmd, $tempfile);
+
+                    # resize image if necessary
+                    if ($height ne $max_height) {
+                        my $factor = $max_height / $height;
+                        $width  = int($width  * $factor);
+                        $height = int($height * $factor);
+                        push(@cmd, '-resize', "${width}x${height}");
+                    }
+
+                } else {
+                    print STDERR "can't write data to temporary file for merging\n";
+                    return;
+                }
+            } else {
+                print STDERR "can't open temporary file for merging\n";
+                return;
+            }
+
+            print "${url}\n";
+        }
+
+        my $merged = "${tempdir}/${base}_merged.jpg";
+        push(@cmd, '+append', $merged);
+        if (system(@cmd) != 0) {
+            print STDERR "can't merge images\n";
+            return;
+        }
+
+        return $merged;
+    }
+
+    sub get_comic_kingfeatures($) {
+        my($base) = @_;
+        my @yesterday = localtime(get_time() - 86400);
+
+        # fetch & parse page contents
+        my $url = strftime("https://comicskingdom.com/${base}/%Y-%m-%d", @yesterday);
+        my $html = get($url);
+        my $tree = HTML::TreeBuilder->new_from_content($html);
+        unless (defined($tree)) {
+            print STDERR "Couldn't parse HTML from '${url}': $!\n";
+            add_error_node($base, "couldn't get HTML");
+            return;
+        }
+
+        my($images, $max_height) = _kingfeatures_parse($tree);
+
+        # always release DOM tree after we're done!
+        $tree->delete();
+
+        unless (defined($images) && defined($max_height) && ($max_height > 0)) {
+            add_error_node($base, "couldn't parse page");
+            return;
+        }
+
+        if (@{$images} == 1) {
+            # single panel -> no need to merge
+            get_image($url, $base, $images->[0]->{url});
+
+        } else {
+            # multiple panels -> merge horizontally to a single image
+            my $merged = _kingfeatures_fetch_and_merge($base, $images, $max_height);
+            unless (defined($merged)) {
+                add_error_node($base, "couldn't create merged image");
+                return;
+            }
+
+            my $basename = convert_image_file($base, $merged);
+            unless (defined($basename)) {
+                add_error_node($base, "couldn't convert image");
+                return;
+            }
+
+            add_image_node($basename, undef);
+            print "comic fetched from '${url}'\n";
+        }
+    }
 }
 
 ##############################################################################

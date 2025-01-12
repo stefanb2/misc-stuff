@@ -4,7 +4,7 @@ use strict;
 use warnings;
 
 sub get() {
-    ::get_comic_kingfeatures('zits', 'Zits', 'Zits');
+    ::get_comic_kingfeatures('zits');
 }
 
 1;
