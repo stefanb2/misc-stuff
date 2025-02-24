@@ -7,7 +7,7 @@ use open qw(:encoding(UTF-8) :std);
 #
 # External programs called from this scriot
 #
-#    magick        (ImageMagick v7)
+#    magick        (ImageMagick v7 with AVIF support)
 #    ebook-convert (calibre)
 #
 # from perl-TimeDate
@@ -18,6 +18,7 @@ use File::Temp qw(tempdir);
 use Getopt::Long;
 # from perl-HTML-Tree
 use HTML::TreeBuilder;
+use JSON qw(decode_json);
 # requires also LWP::Protocol::https
 use LWP::UserAgent;
 use MIME::Base64;
@@ -396,6 +397,38 @@ sub get_comic_gocomics($) {
         undef,
         class => qr/item-comic-image/
     );
+}
+
+# Helsingin Sanomat
+sub get_comic_hs($$) {
+    my($api_url, $base) = @_;
+    my $imgurl;
+
+    eval {
+        # fetch API response
+        my $json = get($api_url);
+        die "no response from API\n" unless ($json);
+
+        # decode JSON response & extract data
+        my $array                 = decode_json($json);
+        my $picture               = $array->[0]->{picture};
+        my($url_template, $width) = @{$picture}{qw(url width)};
+
+        # generate image URL from response - requires AVIF support
+        #
+        # $ magick -list format | grep -i -e avif -e heic
+        # ...
+        # AVIF  HEIC      rw+   AV1 Image File Format (1.17.6)
+        #
+        ($imgurl = $url_template) =~ s,/WIDTH\.EXT$,/${width}.avif,;
+    };
+    if ($@) {
+        print STDERR "Couldn't get response from '${api_url}': $@";
+        add_error_node($base, "couldn't get page");
+        return;
+    }
+
+    get_image($api_url, $base, $imgurl);
 }
 
 # King Features
