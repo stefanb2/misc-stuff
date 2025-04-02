@@ -395,7 +395,7 @@ sub get_comic_gocomics($) {
         $url,
         $base,
         undef,
-        class => qr/item-comic-image/
+        class => qr/ComicViewer_comicViewer/
     );
 }
 
