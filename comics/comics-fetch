@@ -391,11 +391,26 @@ sub get_comic_gocomics($) {
     my $url       = strftime("https://www.gocomics.com/${base}/%Y/%m/%d",
                              @yesterday);
 
-    get_comic_simple(
+    get_comic(
         $url,
         $base,
         undef,
-        class => qr/ComicViewer_comicViewer/
+        sub {
+            my($tree) = @_;
+            my $url;
+
+            # page now loads the main image dynamically, but
+            # the URL can be found in the Open Graph metadata.
+            my $meta = $tree->look_down(
+                _tag     => 'meta',
+                property => "og:image",
+            );
+            if ($meta) {
+                $url = $meta->attr("content");
+            }
+
+            return($url ? $url : ());
+        }
     );
 }
 
