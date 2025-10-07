@@ -386,6 +386,10 @@ sub get_comic_simple($$$@) {
 
 # www.gocomics.com
 sub get_comic_gocomics($) {
+    # GoComics has implemented protection against scraping
+    # For now change the fetcher to a no-op.
+    return;
+
     my($base)     = @_;
     my @yesterday = localtime(get_time() - 86400);
     my $url       = strftime("https://www.gocomics.com/${base}/%Y/%m/%d",
